@@ -1,0 +1,13 @@
+{
+  "name": "strata",
+  "version": "0.1.0",
+  "description": "Deterministic codebase index: what depends on what, what breaks when you change it, what the docs get wrong. No dashboard, no hooks, no LLM in the index path.",
+  "type": "module",
+  "bin": { "strata": "./bin/strata.mjs" },
+  "engines": { "node": ">=20" },
+  "files": ["bin", "src", "skill"],
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
