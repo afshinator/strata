@@ -1,6 +1,71 @@
 import { posix } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 const JS_EXT = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
+
+// Node builtins are not repo dependencies and must not pollute QUESTIONS.md.
+const NODE_BUILTINS = new Set([
+  "assert", "async_hooks", "buffer", "child_process", "cluster", "console", "constants",
+  "crypto", "dgram", "diagnostics_channel", "dns", "domain", "events", "fs", "http", "http2",
+  "https", "inspector", "module", "net", "os", "path", "perf_hooks", "process", "punycode",
+  "querystring", "readline", "repl", "stream", "string_decoder", "timers", "tls", "trace_events",
+  "tty", "url", "util", "v8", "vm", "wasi", "worker_threads", "zlib", "test",
+]);
+
+function isNodeBuiltin(spec) {
+  if (spec.startsWith("node:")) return true;
+  return NODE_BUILTINS.has(spec.split("/")[0]) && !spec.startsWith(".");
+}
+
+/**
+ * Workspace package name -> directory, from the root manifests. Without this a
+ * monorepo reports every `@scope/pkg` import as unresolved.
+ * shortcut: only expands one level of `dir/*` workspace patterns.
+ */
+export function buildWorkspaces(root) {
+  const map = new Map();
+  const patterns = [];
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    const ws = Array.isArray(pkg.workspaces) ? pkg.workspaces : (pkg.workspaces && pkg.workspaces.packages) || [];
+    patterns.push(...ws);
+  } catch {
+    /* no root manifest; pnpm-workspace.yaml may still exist */
+  }
+  try {
+    const yaml = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
+    for (const line of yaml.split("\n")) {
+      const m = line.match(/^\s*-\s*['"]?([^'"\s#]+)['"]?\s*$/);
+      if (m) patterns.push(m[1]);
+    }
+  } catch {
+    /* no pnpm workspace */
+  }
+  if (!patterns.length) return map;
+  const dirs = new Set();
+  for (const pat of patterns) {
+    const clean = String(pat).replace(/\/+\*+$/, "");
+    if (clean.includes("*")) continue;
+    dirs.add(clean);
+    try {
+      for (const entry of readdirSync(join(root, clean), { withFileTypes: true })) {
+        if (entry.isDirectory()) dirs.add(posix.join(clean, entry.name));
+      }
+    } catch {
+      /* missing workspace dir */
+    }
+  }
+  for (const dir of dirs) {
+    try {
+      const p = JSON.parse(readFileSync(join(root, dir, "package.json"), "utf8"));
+      if (p.name) map.set(p.name, { dir, main: p.main || p.module || null });
+    } catch {
+      /* not a package */
+    }
+  }
+  return map;
+}
 
 function lineIndex(source) {
   const starts = [0];
@@ -17,12 +82,33 @@ function lineIndex(source) {
   };
 }
 
+/**
+ * True when the match starts inside a single-line string literal: fixture code
+ * written as `"import x from './y'"` must not become an edge.
+ * shortcut: only single-line quotes are detected; template literals spanning
+ * lines still produce false positives.
+ */
+function insideString(source, idx) {
+  let lineStart = source.lastIndexOf("\n", idx - 1) + 1;
+  let dq = 0;
+  let sq = 0;
+  let bt = 0;
+  for (let i = lineStart; i < idx; i++) {
+    const c = source[i];
+    if (c === "\\") i++;
+    else if (c === '"') dq++;
+    else if (c === "'") sq++;
+    else if (c === "`") bt++;
+  }
+  return dq % 2 === 1 || sq % 2 === 1 || bt % 2 === 1;
+}
+
 /** Raw import specifiers, with line numbers. Regex tier by definition. */
 export function extractImports(lang, source) {
   const line = lineIndex(source);
   const out = [];
   const push = (spec, idx) => {
-    if (spec) out.push({ spec: spec.trim(), line: line(idx) });
+    if (spec && !insideString(source, idx)) out.push({ spec: spec.trim(), line: line(idx) });
   };
 
   if (lang === "typescript" || lang === "javascript") {
@@ -101,11 +187,11 @@ function resolvePython(fromPath, spec, pyIndex, fileSet) {
   for (const [id, files] of pyIndex) {
     if (id.endsWith("." + spec) && files.length === 1) return { to: [files[0]] };
   }
-  return { reason: `no module '${spec}' in this repo` };
+  return { external: "third-party or stdlib module" };
 }
 
 function resolveGo(fromPath, spec, goModule, fileSet) {
-  if (!goModule || !spec.startsWith(goModule)) return { reason: "external package" };
+  if (!goModule || !spec.startsWith(goModule)) return { external: "external package" };
   const rel = spec.slice(goModule.length).replace(/^\//, "");
   const target = rel === "" ? "." : rel;
   const hits = [...fileSet].filter((p) => posix.dirname(p) === target && p.endsWith(".go"));
@@ -118,9 +204,40 @@ function resolveC(fromPath, spec, fileSet) {
   return fileSet.has(target) ? { to: [target] } : { reason: "header not found next to the source (include dirs not modelled)" };
 }
 
-export function resolveImports({ files, fileSet, sources, goModule }) {
+function resolveWorkspace(spec, workspaces, fileSet) {
+  const parts = spec.split("/");
+  const name = spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
+  const sub = parts.slice(spec.startsWith("@") ? 2 : 1).join("/");
+  const hit = workspaces.get(name);
+  if (!hit) return { external: "external dependency (tsconfig paths not modelled in v0.1)" };
+  const base = sub ? posix.join(hit.dir, sub) : hit.dir;
+  if (sub) {
+    const cand = tryJsCandidates(posix.join(base, "x"), "." + "/" + posix.basename(base), fileSet);
+    if (cand) return { to: [cand] };
+  }
+  const direct = [];
+  if (hit.main) {
+    const main = posix.normalize(posix.join(hit.dir, hit.main));
+    direct.push(main, ...JS_EXT.map((e) => main.replace(/\.[cm]?js$/, "") + e));
+    // Build output paths (dist/index.js) point at nothing in git; try the source tree.
+    if (main.includes("/dist/")) {
+      const src = main.replace("/dist/", "/src/");
+      direct.push(src, ...JS_EXT.map((e) => src.replace(/\.[cm]?js$/, "") + e));
+    }
+  }
+  for (const p of direct) if (fileSet.has(p)) return { to: [p] };
+  // Any shallow entry file inside the package.
+  const inside = [...fileSet]
+    .filter((p) => p.startsWith(hit.dir + "/") && /(^|\/)(index|main)\.(t|j)sx?$/.test(p))
+    .sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
+  if (inside.length) return { to: [inside[0]] };
+  return { reason: `workspace package '${name}' has no resolvable entry file` };
+}
+
+export function resolveImports({ files, fileSet, sources, goModule, workspaces = new Map() }) {
   const edges = [];
   const unresolved = [];
+  const external = new Map();
   const pyIndex = makePythonIndex(fileSet);
 
   for (const f of files) {
@@ -132,8 +249,10 @@ export function resolveImports({ files, fileSet, sources, goModule }) {
         if (spec.startsWith(".") || spec.startsWith("/")) {
           const hit = tryJsCandidates(f.path, spec, fileSet);
           res = hit ? { to: [hit] } : { reason: "relative path does not resolve" };
+        } else if (isNodeBuiltin(spec)) {
+          res = { external: "node builtin" };
         } else {
-          res = { reason: "bare specifier (tsconfig paths not modelled in v0.1)" };
+          res = resolveWorkspace(spec, workspaces, fileSet);
         }
       } else if (f.lang === "python") res = resolvePython(f.path, spec, pyIndex, fileSet);
       else if (f.lang === "go") res = resolveGo(f.path, spec, goModule, fileSet);
@@ -144,10 +263,12 @@ export function resolveImports({ files, fileSet, sources, goModule }) {
           if (to === f.path) continue;
           edges.push({ from: f.path, to, type: "imports", spec, line, tier: "regex" });
         }
+      } else if (res.external) {
+        external.set(res.external, (external.get(res.external) || 0) + 1);
       } else {
         unresolved.push({ file: f.path, spec, line, reason: res.reason });
       }
     }
   }
-  return { edges, unresolved };
+  return { edges, unresolved, external };
 }

@@ -45,8 +45,8 @@ test("index writes a graph with resolved relative edges and records the unresolv
   const pairs = data.edges.map((e) => `${e.from}->${e.to}`);
   assert.ok(pairs.includes("src/billing/invoice.ts->src/db.ts"), "relative import resolves");
   assert.ok(pairs.includes("src/billing/ledger.ts->src/billing/invoice.ts"));
-  assert.equal(data.unresolved.length, 1, "bare specifier is unresolved, not invented");
-  assert.equal(data.unresolved[0].spec, "some-external");
+  assert.equal(data.unresolved.length, 0, "external dependency is not a repo edge and not a failure");
+  assert.ok(data.stats.external["external dependency (tsconfig paths not modelled in v0.1)"] >= 1);
 
   const map = readFileSync(join(root, ".strata/MAP.md"), "utf8");
   assert.match(map, /Everything depends on these/);
@@ -102,4 +102,28 @@ test("risk thresholds escalate on fan-in and churn", () => {
   assert.equal(riskOf({ fanIn: 0, churn: 10 }), "MEDIUM");
   assert.equal(riskOf({ fanIn: 20, churn: 0 }), "HIGH");
   assert.equal(riskOf({ fanIn: 10, churn: 10 }), "HIGH");
+});
+
+test("workspace packages resolve through the root manifest instead of flooding QUESTIONS.md", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-ws-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "t@example.com"]);
+  sh(root, ["config", "user.name", "t"]);
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "mono", workspaces: ["packages/*"] }));
+  mkdirSync(join(root, "packages/core/src"), { recursive: true });
+  mkdirSync(join(root, "packages/app/src"), { recursive: true });
+  writeFileSync(join(root, "packages/core/package.json"), JSON.stringify({ name: "@m/core", main: "./src/index.ts" }));
+  writeFileSync(join(root, "packages/core/src/index.ts"), "export const core = 1;\n");
+  writeFileSync(join(root, "packages/app/package.json"), JSON.stringify({ name: "@m/app" }));
+  writeFileSync(join(root, "packages/app/src/main.ts"), 'import { core } from "@m/core";\nimport fs from "node:fs";\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "mono"]);
+
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.ok(
+    data.edges.some((e) => e.from === "packages/app/src/main.ts" && e.to === "packages/core/src/index.ts"),
+    "workspace import resolves to the package entry",
+  );
+  assert.equal(data.unresolved.length, 0, "node builtin and workspace import are both accounted for");
 });

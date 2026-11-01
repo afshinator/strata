@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { git, head, isRepo, listFiles, history, topOwners } from "../lib/git.mjs";
 import { scan, mapTests } from "../lib/scan.mjs";
-import { resolveImports } from "../lib/imports.mjs";
+import { resolveImports, buildWorkspaces } from "../lib/imports.mjs";
 import { buildGraph, topoOrder } from "../lib/graph.mjs";
 import { writeIndex, writeText, lock, paths } from "../lib/store.mjs";
 import { IMPORT_LANGS } from "../lib/lang.mjs";
@@ -67,7 +67,8 @@ export function index(root, args = {}) {
     const fileSet = new Set(files.map((f) => f.path));
     const goModule = goModuleOf(root);
 
-    const { edges, unresolved } = resolveImports({ files, fileSet, sources, goModule });
+    const workspaces = buildWorkspaces(root);
+    const { edges, unresolved, external } = resolveImports({ files, fileSet, sources, goModule, workspaces });
     const graph = buildGraph(edges, files);
     const { testsFor, mappedTests } = mapTests(files);
     const hist = history(root);
@@ -88,6 +89,7 @@ export function index(root, args = {}) {
         files: files.length,
         edges: edges.length,
         unresolved: unresolved.length,
+        external: Object.fromEntries(external),
         noExtractor,
         langs: byLang,
         commitsConsidered: hist.commits,
@@ -119,7 +121,7 @@ export function index(root, args = {}) {
       process.stdout.write(
         [
           `strata index (0 tokens · ${ms}ms)   ${files.length} files · ${Object.keys(byLang).length} languages`,
-          `edges    ${edges.length} at tier=regex · ${unresolved.length} unresolved (${pct(unresolved.length, edges.length + unresolved.length)})`,
+          `edges    ${edges.length} at tier=regex · ${unresolved.length} unresolved · ${[...external.values()].reduce((a, b) => a + b, 0)} external skipped`,
           `tests    ${mappedTests.size} test files matched to sources by convention`,
           `churn    ${hist.commits} commits / 90d${top ? ` · top fan-in ${top.p} (${top.n})` : ""}`,
           `exports  ${noExtractor} files have no import extractor at this tier`,
@@ -152,7 +154,9 @@ function renderMap({ data, ident, graph, files, testsFor, mappedTests, hist }) {
   L.push("## Numbers", "");
   L.push(
     `${stats.files} files · ${langs.map(([l, n]) => `${l} ${n}`).join(" · ")}`,
-    `${stats.edges} import edges (tier: **regex**) · ${stats.unresolved} unresolved · ${stats.noExtractor} files have no extractor`,
+    `${stats.edges} import edges (tier: **regex**) · ${stats.unresolved} unresolved · ${
+      Object.values(stats.external || {}).reduce((a, b) => a + b, 0)
+    } external (not repo edges) · ${stats.noExtractor} files have no extractor`,
     `${mappedTests.size} test files matched by convention · churn window 90d, ${stats.commitsConsidered} commits`,
     "",
   );

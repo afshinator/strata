@@ -28,7 +28,9 @@ strata status     # 0 tokens, staleness
 ## Status
 
 Phase 1, `regex` tier. Working: `index`, `blast`, `status`, `MAP.md`, `QUESTIONS.md`, lock, atomic writes.
-Import resolution: relative JS/TS (incl. `.js`→`.ts`), Python relative + module lookup, Go module-relative packages, C/C++ local headers. Bare specifiers (`@scope/pkg`, tsconfig path aliases) are reported unresolved by design.
+Import resolution: relative JS/TS (incl. `.js`→`.ts`), workspace packages from `package.json` `workspaces` and `pnpm-workspace.yaml` (entry file, `dist/`→`src/` fallback), Python relative + module lookup, Go module-relative packages, C/C++ local headers. `node:` builtins and third-party specifiers are counted as *external*, not as failures; tsconfig path aliases are not modelled and land there too. Imports written inside string literals are ignored so fixture code does not become an edge.
+
+Known regex-tier misses: dynamic `require(variable)`, aliases outside tsconfig handling, template literals spanning lines.
 Not built yet: tree-sitter tier, `compiler` tier via LSP/`tsc`, `ask`, docs layer. The docs-layer tooling is already chosen and measured in [`research/strata-docs-layer-tooling.md`](research/strata-docs-layer-tooling.md): lychee, vale, typos, ast-grep, mdast.
 
 ## Use
