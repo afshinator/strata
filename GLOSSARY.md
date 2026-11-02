@@ -97,7 +97,7 @@ A commit author email and how many of the window's commits touched a file. Repor
 _Avoid_: maintainer, author, code owner
 
 **Hotspot**:
-Churn multiplied by fan-in: a file that changes often and that many files depend on.
+Churn weighted by fan-in, ranked as churn × (fan-in + 1), so a frequently changed file still ranks when nothing imports it.
 _Avoid_: hotspot score, risk score
 
 **Risk**:

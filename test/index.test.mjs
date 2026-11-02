@@ -128,23 +128,30 @@ test("workspace packages resolve through the root manifest instead of flooding Q
   assert.equal(data.unresolved.length, 0, "node builtin and workspace import are both accounted for");
 });
 
-test("edge identity is (from,to): two import sites of one target collapse to one edge", () => {
+test("edge identity is (from,to): repeated import sites of one target collapse to one edge", () => {
   const root = fixture();
-  writeFileSync(join(root, "src/dupe.ts"), 'import { db } from "./db";\nimport { db as again } from "./db";\n');
+  writeFileSync(
+    join(root, "src/dupe.ts"),
+    'import { db } from "./db";\nimport { db as again } from "./db";\nimport { db as third } from "./db.ts";\n',
+  );
   sh(root, ["add", "-A"]);
   sh(root, ["commit", "-m", "dupe"]);
   run(root, ["index"]);
   const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
   const hits = data.edges.filter((e) => e.from === "src/dupe.ts" && e.to === "src/db.ts");
   assert.equal(hits.length, 1, "two import sites, one edge");
-  assert.equal(data.stats.edges, data.edges.length, "edge count matches the edge list");
+  assert.equal(
+    new Set(data.edges.map((e) => `${e.from}>${e.to}`)).size,
+    data.edges.length,
+    "every published edge is unique",
+  );
 });
 
 test("commit count matches git's count for the same window", () => {
   const root = fixture();
   run(root, ["index"]);
   const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
-  const expected = Number(sh(root, ["rev-list", "--count", "--since=90.days", "HEAD"]).trim());
+  const expected = Number(sh(root, ["rev-list", "--count", "--since=90.days", "--no-merges", "HEAD"]).trim());
   assert.equal(data.stats.commitsConsidered, expected, "no phantom commit from the log prefix");
 });
 

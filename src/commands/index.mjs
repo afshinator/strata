@@ -196,8 +196,13 @@ function renderMap({ data, ident, graph, files, testsFor, mappedTests, hist }) {
     .sort((a, b) => b.score - a.score)
     .slice(0, 10);
   if (hotspots.length) {
-    L.push("## Hotspots (churn × fan-in)", "");
+    L.push("## Hotspots (churn × (fan-in + 1))", "");
+    L.push("Ranked by churn × (fan-in + 1), so a frequently changed file still ranks with no importers.", "");
     for (const h of hotspots) L.push(`- \`${h.path}\` — ${hist.churn.get(h.path)} commits, fan-in ${h.fanIn}`);
+    L.push(
+      "",
+      "Risk legend: HIGH at fan-in ≥ 20, churn ≥ 30, or fan-in ≥ 10 with churn ≥ 10; MEDIUM at fan-in ≥ 5 or churn ≥ 10.",
+    );
     L.push("");
   }
 
