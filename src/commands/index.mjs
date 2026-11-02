@@ -28,9 +28,11 @@ function repoIdentity(root) {
 function entryPoints(files, pkg) {
   const out = new Set();
   if (pkg) {
+    // `./bin/x.mjs` and `bin/x.mjs` name the same file, and git prints the latter.
+    const declared = (p) => p.replace(/^\.\//, "");
     const bins = typeof pkg.bin === "string" ? [pkg.bin] : pkg.bin ? Object.values(pkg.bin) : [];
-    for (const b of bins) out.add(b);
-    if (pkg.main) out.add(pkg.main);
+    for (const b of bins) out.add(declared(b));
+    if (pkg.main) out.add(declared(pkg.main));
   }
   for (const f of files) {
     const p = f.path;
