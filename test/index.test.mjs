@@ -698,3 +698,39 @@ test("blast lists tests mapped through a repo-level test directory", () => {
   const affected = out.split("affected tests")[1] || "";
   assert.match(affected, /test\/unit\/a\.test\.ts/, "listed as an affected test, not merely as an importer");
 });
+
+function entryFixture(binPath, mainPath, realFiles = true) {
+  const root = mkdtempSync(join(tmpdir(), "strata-entry-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "t@example.com"]);
+  sh(root, ["config", "user.name", "t"]);
+  mkdirSync(join(root, "bin"), { recursive: true });
+  mkdirSync(join(root, "lib"), { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "ep", bin: { ep: binPath }, main: mainPath }));
+  if (realFiles) {
+    writeFileSync(join(root, "bin/tool.mjs"), "export const a = 1;\n");
+    writeFileSync(join(root, "lib/start.mjs"), "export const b = 1;\n");
+  }
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "entry"]);
+  run(root, ["index"]);
+  const map = readFileSync(join(root, ".strata/MAP.md"), "utf8");
+  return map.split("## Entry points")[1]?.split("\n## ")[0] || "";
+}
+
+test("entry points declared with a leading ./ are listed", () => {
+  const section = entryFixture("./bin/tool.mjs", "./lib/start.mjs");
+  assert.match(section, /bin\/tool\.mjs/, "bin, written the conventional way");
+  assert.match(section, /lib\/start\.mjs/, "main, written the conventional way");
+});
+
+test("entry points declared without ./ are listed too", () => {
+  const section = entryFixture("bin/tool.mjs", "lib/start.mjs");
+  assert.match(section, /bin\/tool\.mjs/);
+  assert.match(section, /lib\/start\.mjs/);
+});
+
+test("a declared entry point that is not in the index is not listed", () => {
+  const section = entryFixture("./bin/missing.mjs", "./lib/also-missing.mjs", false);
+  assert.equal(section.trim(), "", "no dangling entry points");
+});
