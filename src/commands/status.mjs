@@ -1,12 +1,16 @@
 import { existsSync } from "node:fs";
 import { readIndex, paths } from "../lib/store.mjs";
-import { changedSince, dirtyPaths, head, tryGit } from "../lib/git.mjs";
+import { changedSince, dirtyPaths, head, tryGit, isRepo } from "../lib/git.mjs";
 
 export function status(root) {
+  if (!isRepo(root)) {
+    process.stderr.write("strata: not a git repository.\n");
+    return 2;
+  }
   const data = readIndex(root);
   if (!data) {
-    process.stdout.write("strata status — no index. Run `strata index` (0 tokens).\n");
-    return 0;
+    process.stderr.write("strata: no index. Run `strata index` (0 tokens).\n");
+    return 2;
   }
   const now = head(root);
   const dirty = dirtyPaths(root);

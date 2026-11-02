@@ -1,6 +1,6 @@
 import { readIndex } from "../lib/store.mjs";
 import { buildGraph, reverseClosure } from "../lib/graph.mjs";
-import { changedSince, dirtyPaths, head } from "../lib/git.mjs";
+import { changedSince, dirtyPaths, head, tryGit } from "../lib/git.mjs";
 
 export function riskOf(entry) {
   const fanIn = entry.fanIn || 0;
@@ -11,14 +11,27 @@ export function riskOf(entry) {
 }
 
 export function blast(root, args = {}) {
+  // Bad input is a usage error and is refused before anything is reported on.
+  const depthArg = args.depth;
+  const depth = depthArg === undefined ? 1 : Number(depthArg);
+  if (depthArg === true || !Number.isInteger(depth) || depth < 1) {
+    const shown = depthArg === true ? "(no value)" : depthArg;
+    process.stderr.write(`strata: --depth must be a positive integer, got '${shown}'\n`);
+    return 2;
+  }
+  if (args.since && tryGit(root, ["rev-parse", "--verify", "--quiet", `${args.since}^{commit}`]) === null) {
+    process.stderr.write(`strata: unknown revision '${args.since}'\n`);
+    return 2;
+  }
+
   const data = readIndex(root);
   if (!data) {
-    process.stderr.write("strata: no index. Run `strata index` first (it costs nothing).\n");
-    return 2;
+    // A report, not a gate: missing index is a notice, so it never fails a build.
+    process.stdout.write("strata: no index — run `strata index` (it costs nothing).\n");
+    return 0;
   }
   const graph = buildGraph(data.edges, data.files);
   const byPath = new Map(data.files.map((f) => [f.path, f]));
-  const depth = Number(args.depth || 1);
 
   let changed;
   let basis;

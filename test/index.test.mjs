@@ -81,10 +81,11 @@ test("blast --json is parseable and includes seeds with risk", () => {
   assert.deepEqual(json.seeds.map((s) => s.path), ["src/db.ts"]);
 });
 
-test("status with no index tells the user what to run instead of scanning", () => {
+test("status with no index refuses and says what to run", () => {
   const root = fixture();
-  const out = run(root, ["status"]);
-  assert.match(out, /Run `strata index`/);
+  const r = exitOf(root, ["status"]);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /Run `strata index`/);
 });
 
 test("a stale lock is reclaimed instead of bricking the next run", () => {
@@ -519,4 +520,68 @@ test("the tool writes nothing outside its data dir", () => {
   const after = sh(root, ["ls-files"]).trim().split("\n").filter(Boolean).sort();
   assert.deepEqual(after, before, "no new tracked paths");
   assert.equal(sh(root, ["status", "--porcelain"]).trim(), "", "no tracked file modified");
+});
+
+function exitOf(cwd, args) {
+  try {
+    const out = execFileSync(process.execPath, [BIN, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return { code: 0, out: String(out || ""), err: "" };
+  } catch (err) {
+    return { code: err.status, out: String(err.stdout || ""), err: String(err.stderr || "") };
+  }
+}
+
+test("blast refuses an unknown revision instead of reporting no changes", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  const r = exitOf(root, ["blast", "--since", "NOPE"]);
+  assert.equal(r.code, 2, "a typo is a usage error");
+  assert.match(r.err, /NOPE/, "and it names the revision");
+  assert.doesNotMatch(r.out, /no changes/, "never disguised as an empty result");
+});
+
+test("blast refuses a depth that is not a positive integer", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  for (const d of ["0", "-1", "abc"]) {
+    const r = exitOf(root, ["blast", "--depth", d]);
+    assert.equal(r.code, 2, `--depth ${d}`);
+    assert.match(r.err, /depth/);
+  }
+});
+
+test("blast still reports no changes on a clean tree", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  const r = exitOf(root, ["blast", "--since", "HEAD"]);
+  assert.equal(r.code, 0);
+  assert.match(r.out, /no changes/);
+});
+
+test("status refuses when there is no index or no repository", () => {
+  const root = fixture();
+  const noIndex = exitOf(root, ["status"]);
+  assert.equal(noIndex.code, 2, "no index");
+  const plain = mkdtempSync(join(tmpdir(), "strata-plain-"));
+  assert.equal(exitOf(plain, ["status"]).code, 2, "not a repository");
+});
+
+test("blast does not fail a build when the index is missing", () => {
+  const root = fixture();
+  const r = exitOf(root, ["blast"]);
+  assert.equal(r.code, 0, "a report, not a gate");
+  assert.match(r.out, /strata index/, "and it says what to run");
+});
+
+test("an unknown flag is rejected rather than ignored", () => {
+  const root = fixture();
+  for (const args of [
+    ["index", "--data-dir", "/tmp/x"],
+    ["blast", "--nope"],
+    ["status", "--bogus"],
+  ]) {
+    const r = exitOf(root, args);
+    assert.equal(r.code, 2, args.join(" "));
+    assert.match(r.err, /unknown flag/, args.join(" "));
+  }
 });

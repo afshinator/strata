@@ -32,26 +32,38 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv.slice(2));
 const cmd = args._[0];
-// git prints paths relative to the worktree root, so the tool must resolve from there too.
-const cwd = process.cwd();
-const root = args.root ? args.root : toplevel(cwd) || cwd;
+// Accept only the flags a command implements, so a typo fails instead of being ignored.
+const FLAGS = {
+  index: ["root", "quiet"],
+  blast: ["root", "since", "depth", "json", "sketch"],
+  status: ["root"],
+};
+const unknown = FLAGS[cmd] ? Object.keys(args).find((k) => k !== "_" && !FLAGS[cmd].includes(k)) : undefined;
+if (unknown) {
+  process.stderr.write(`strata: unknown flag --${unknown}\n\n${USAGE}`);
+  process.exitCode = 2;
+} else {
+  // git prints paths relative to the worktree root, so the tool must resolve from there too.
+  const cwd = process.cwd();
+  const root = args.root ? args.root : toplevel(cwd) || cwd;
 
-switch (cmd) {
-  case "index":
-    process.exitCode = index(root, args);
-    break;
-  case "blast":
-    process.exitCode = blast(root, args);
-    break;
-  case "status":
-    process.exitCode = status(root);
-    break;
-  case undefined:
-  case "help":
-  case "--help":
-    process.stdout.write(USAGE);
-    break;
-  default:
-    process.stderr.write(`strata: unknown command '${cmd}'\n\n${USAGE}`);
-    process.exitCode = 2;
+  switch (cmd) {
+    case "index":
+      process.exitCode = index(root, args);
+      break;
+    case "blast":
+      process.exitCode = blast(root, args);
+      break;
+    case "status":
+      process.exitCode = status(root);
+      break;
+    case undefined:
+    case "help":
+    case "--help":
+      process.stdout.write(USAGE);
+      break;
+    default:
+      process.stderr.write(`strata: unknown command '${cmd}'\n\n${USAGE}`);
+      process.exitCode = 2;
+  }
 }
