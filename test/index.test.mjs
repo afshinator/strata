@@ -323,3 +323,27 @@ test("a mixed change still reports tracked and untracked sections", () => {
   assert.match(out, /1 changed file/);
   assert.match(out, /src\/brandNew\.ts/);
 });
+
+test("reading order puts dependencies before the files that import them", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const at = (p) => data.readingOrder.indexOf(p);
+  assert.ok(at("src/db.ts") >= 0, "the leaf is ordered");
+  assert.ok(at("src/db.ts") < at("src/billing/invoice.ts"), "db before the file importing it");
+  assert.ok(at("src/billing/invoice.ts") < at("src/billing/ledger.ts"), "invoice before ledger");
+  assert.ok(at("src/billing/ledger.ts") < at("src/cli.ts"), "ledger before its entry-point importer");
+});
+
+test("a cycle is listed and no file is dropped", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/p.ts"), 'import { q } from "./q";\nexport const p = 1;\n');
+  writeFileSync(join(root, "src/q.ts"), 'import { p } from "./p";\nexport const q = 1;\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "cycle"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.ok(data.cycles.includes("src/p.ts"), "p is unorderable");
+  assert.ok(data.cycles.includes("src/q.ts"), "q is unorderable");
+  assert.equal(data.readingOrder.length + data.cycles.length, data.files.length, "nothing dropped");
+});

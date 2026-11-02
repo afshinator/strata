@@ -39,27 +39,31 @@ export function reverseClosure(graph, seeds, depth = 1) {
   return { all: [...seen], byDepth };
 }
 
-/** Kahn topological order over the import graph: dependencies first, cycles last. */
+/**
+ * Kahn over the import graph, dependency first: a file is emitted once every indexed
+ * file it imports has been emitted, so entry points come last. Files whose imports
+ * never all resolve - a cycle, or something downstream of one - cannot be ordered.
+ */
 export function topoOrder(graph, paths) {
-  const inCycle = new Set();
-  const indeg = new Map();
-  for (const p of paths) indeg.set(p, 0);
-  for (const [from, outs] of graph.imports) {
-    if (!indeg.has(from)) continue;
-    for (const to of outs) if (indeg.has(to)) indeg.set(to, indeg.get(to) + 1);
+  const known = new Set(paths);
+  const pending = new Map(); // how many of a file's own imports are still unemitted
+  for (const p of paths) {
+    let n = 0;
+    for (const to of graph.imports.get(p) || []) if (known.has(to)) n++;
+    pending.set(p, n);
   }
-  const queue = paths.filter((p) => indeg.get(p) === 0).sort();
+  const queue = paths.filter((p) => pending.get(p) === 0).sort(); // leaves: import nothing
   const order = [];
   while (queue.length) {
     const p = queue.shift();
     order.push(p);
-    for (const to of graph.imports.get(p) || []) {
-      if (!indeg.has(to)) continue;
-      const n = indeg.get(to) - 1;
-      indeg.set(to, n);
-      if (n === 0) queue.push(to);
+    for (const importer of graph.importers.get(p) || []) {
+      if (!known.has(importer)) continue;
+      const n = pending.get(importer) - 1;
+      pending.set(importer, n);
+      if (n === 0) queue.push(importer);
     }
   }
-  for (const p of paths) if (!order.includes(p)) inCycle.add(p);
-  return { order, inCycle: [...inCycle].sort() };
+  const ordered = new Set(order);
+  return { order, inCycle: paths.filter((p) => !ordered.has(p)).sort() };
 }
