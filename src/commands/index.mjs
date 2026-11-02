@@ -124,7 +124,7 @@ export function index(root, args = {}) {
         [
           `strata index (0 tokens · ${ms}ms)   ${files.length} files · ${Object.keys(byLang).length} languages`,
           `edges    ${edges.length} at tier=regex · ${unresolved.length} unresolved · ${[...external.values()].reduce((a, b) => a + b, 0)} external skipped`,
-          `tests    ${mappedTests.size} test files matched to sources by convention`,
+          `tests    ${mappedTests.size} test files matched to sources`,
           `churn    ${hist.commits} commits / 90d${top ? ` · top fan-in ${top.p} (${top.n})` : ""}`,
           `exports  ${noExtractor} files have no import extractor at this tier`,
           `wrote    .strata/index.json · MAP.md · QUESTIONS.md`,
@@ -159,7 +159,7 @@ function renderMap({ data, ident, graph, files, testsFor, mappedTests, hist, gen
     `${stats.edges} import edges (tier: **regex**) · ${stats.unresolved} unresolved · ${
       Object.values(stats.external || {}).reduce((a, b) => a + b, 0)
     } external (not repo edges) · ${stats.noExtractor} files have no extractor`,
-    `${mappedTests.size} test files matched by convention · churn window 90d, ${stats.commitsConsidered} commits`,
+    `${mappedTests.size} test files matched to sources · churn window 90d, ${stats.commitsConsidered} commits`,
     "",
   );
 
@@ -211,7 +211,7 @@ function renderMap({ data, ident, graph, files, testsFor, mappedTests, hist, gen
   const gaps = byFanIn.filter((f) => f.fanIn > 0 && !(testsFor.get(f.path) || []).length).slice(0, 10);
   if (gaps.length) {
     L.push("## Untested and depended on", "");
-    for (const g of gaps) L.push(`- \`${g.path}\` — fan-in ${g.fanIn}, no test file by convention`);
+    for (const g of gaps) L.push(`- \`${g.path}\` — fan-in ${g.fanIn}, no test file found`);
     L.push("");
   }
 

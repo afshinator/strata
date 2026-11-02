@@ -6,7 +6,7 @@ They are **not** the tickets. The tickets are GitHub issues; see the mapping bel
 
 ## Status
 
-Every defect below is now either fixed inline or tracked in issue 1–10. Codes `T01…T23` are historical identifiers, kept so the review codes (`R1 S-F5`, `R2 P-F5`, …) remain traceable.
+Every defect below is now either fixed inline or tracked in issue 1–10. Two later findings came from outside the reviews and are not listed here: issue #12 (test mapping missed a repo-level test directory) and issue #14 (entry points dropped when `package.json` writes `./`), both found by testing on a real repository. Codes `T01…T23` are historical identifiers, kept so the review codes (`R1 S-F5`, `R2 P-F5`, …) remain traceable.
 
 ## Mapping
 

@@ -49,7 +49,7 @@ The machine artifact: every indexed file with its facts, every edge, every unres
 _Avoid_: graph file, json, database, cache
 
 **Map**:
-The generated briefing: numbers, entry points, fan-in table, reading order, cycles, hotspots, untested gaps.
+The generated briefing: numbers, entry points, fan-in table, reading order, unorderable files, hotspots, untested gaps.
 _Avoid_: report, summary, dashboard, docs
 
 **Questions**:
@@ -79,7 +79,7 @@ A changed path the index does not know about: new, untracked, or ignored.
 _Avoid_: untracked (one cause, not the category), unknown
 
 **Blast**:
-The indexed files that transitively import a changed file. The changed files themselves are not part of it.
+The indexed files that import a changed file, transitively up to the requested depth, which defaults to one hop. The changed files themselves are not part of it.
 _Avoid_: impact, blast radius, reverse closure, dependents
 
 **Reading order**:
@@ -107,5 +107,5 @@ _Avoid_: severity, criticality, danger, score
 ### Tests
 
 **Test mapping**:
-The tests belonging to a source file, found by naming convention. Absence means no test was found by convention, not that none exists.
+The tests belonging to a source file: a test beside it, else a test that imports it, else one whose name matches under a test directory. Absence means none was found, not that none exists.
 _Avoid_: coverage, test coverage, test association
