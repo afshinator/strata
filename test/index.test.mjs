@@ -127,3 +127,40 @@ test("workspace packages resolve through the root manifest instead of flooding Q
   );
   assert.equal(data.unresolved.length, 0, "node builtin and workspace import are both accounted for");
 });
+
+test("edge identity is (from,to): two import sites of one target collapse to one edge", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/dupe.ts"), 'import { db } from "./db";\nimport { db as again } from "./db";\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "dupe"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const hits = data.edges.filter((e) => e.from === "src/dupe.ts" && e.to === "src/db.ts");
+  assert.equal(hits.length, 1, "two import sites, one edge");
+  assert.equal(data.stats.edges, data.edges.length, "edge count matches the edge list");
+});
+
+test("commit count matches git's count for the same window", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const expected = Number(sh(root, ["rev-list", "--count", "--since=90.days", "HEAD"]).trim());
+  assert.equal(data.stats.commitsConsidered, expected, "no phantom commit from the log prefix");
+});
+
+test("blast reports the edge tier in text and JSON", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  writeFileSync(join(root, "src/db.ts"), "export const db = 4;\n");
+  const json = JSON.parse(run(root, ["blast", "--since", "HEAD", "--json"]));
+  assert.equal(json.tier, "regex");
+  assert.match(run(root, ["blast", "--since", "HEAD"]), /tier regex/);
+  assert.match(run(root, ["blast", "--since", "HEAD", "--sketch"]), /tier regex/);
+});
+
+test("usage documents the flags that exist and omits the ones that do not", () => {
+  const root = fixture();
+  const help = run(root, []);
+  assert.match(help, /--sketch/);
+  assert.doesNotMatch(help, /--data-dir/);
+});

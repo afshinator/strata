@@ -236,6 +236,7 @@ function resolveWorkspace(spec, workspaces, fileSet) {
 
 export function resolveImports({ files, fileSet, sources, goModule, workspaces = new Map() }) {
   const edges = [];
+  const seen = new Set(); // one edge per (from, to); import sites may repeat
   const unresolved = [];
   const external = new Map();
   const pyIndex = makePythonIndex(fileSet);
@@ -261,6 +262,9 @@ export function resolveImports({ files, fileSet, sources, goModule, workspaces =
       if (res.to) {
         for (const to of res.to) {
           if (to === f.path) continue;
+          const key = `${f.path}\0${to}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
           edges.push({ from: f.path, to, type: "imports", spec, line, tier: "regex" });
         }
       } else if (res.external) {

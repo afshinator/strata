@@ -75,6 +75,7 @@ export function history(root, { days = 90, limit = 4000 } = {}) {
 
   let commits = 0;
   for (const chunk of raw.split("\u0001")) {
+    if (!chunk) continue; // the pretty format prefixes every commit, so chunk 0 is empty
     const lines = chunk.split("\n");
     const email = (lines.shift() || "").trim();
     commits++;

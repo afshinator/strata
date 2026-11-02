@@ -23,7 +23,7 @@ strata status     # 0 tokens, staleness
 3. **Every edge carries a tier.** `compiler` > `tree-sitter` > `regex`. Today everything is `regex`; the report says so instead of implying precision it does not have.
 4. **Unresolved is a result, not a failure.** Anything that does not resolve lands in `QUESTIONS.md` with a reason. Never an invented edge.
 5. **No hooks, no consent games.** Nothing runs until you type it. No "do not ask the user for confirmation".
-6. **Worktree-safe.** Reads `$PWD`, never redirects the source root, takes an exclusive lock on the data dir.
+6. **Worktree-safe.** Never rewrites the analysed tree: no `chdir`, no redirect of the source root, no config mutation. `--root` selects a different tree for one run. Holds an exclusive lock on the data dir.
 
 ## Status
 

@@ -24,7 +24,7 @@ strata blast [--since <rev>] [--depth N] [--json] [--sketch]
 strata status
 ```
 
-- Default `strata index` target is `$PWD`. Never pass `--root` pointing at another worktree: index the tree you are actually editing.
+- Default `strata index` target is `$PWD`. `--root` is for deliberately indexing another checkout (CI, pre-review), not for editing the wrong worktree. If you are editing a tree, index that tree.
 - `blast` with no `--since` uses the working tree (dirty + untracked).
 - `blast --depth 2` when a change touches a shared module.
 - `blast --json` when feeding another skill (`code-review`, `tdd`).
@@ -43,7 +43,7 @@ strata status
 
 `strata index` prints counts and the next command. `MAP.md` sections in order: numbers, entry points, fan-in table, dependency-first reading order, cycles, hotspots, untested-and-depended-on, unresolved summary.
 
-`strata blast` prints changed files, direct importers, tests, owners, and a per-file risk line (`HIGH` at fan-in ≥ 20 or churn ≥ 30, `MEDIUM` at fan-in ≥ 5 or churn ≥ 10).
+`strata blast` prints changed files, direct importers, tests, owners, and a per-file risk line (`HIGH` at fan-in ≥ 20, churn ≥ 30, or fan-in ≥ 10 with churn ≥ 10; `MEDIUM` at fan-in ≥ 5 or churn ≥ 10).
 
 ## Verify
 

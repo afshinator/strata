@@ -6,12 +6,12 @@ import { status } from "../src/commands/status.mjs";
 const USAGE = `strata — deterministic codebase index
 
   strata index [--root <dir>] [--quiet]     build .strata/index.json + MAP.md (0 tokens)
-  strata blast [--since <rev>] [--depth N] [--json]
+  strata blast [--since <rev>] [--depth N] [--json] [--sketch]
                                             what depends on what changed (0 tokens)
   strata status                             staleness, drift, next command
 
-  --root <dir>   analyze another directory
-  --data-dir     default <root>/.strata
+  --root <dir>   analyze another directory (default: $PWD)
+  --sketch       importer tree instead of a risk table
 
 Tiers: compiler > tree-sitter > regex. Every edge carries its tier.
 `;

@@ -65,6 +65,7 @@ export function blast(root, args = {}) {
         {
           basis,
           head: data.head,
+          tier: data.tier,
           currentHead: head(root),
           changed,
           affected: { direct: byDepth[0] || [], all: affected },
@@ -81,7 +82,7 @@ export function blast(root, args = {}) {
   }
 
   if (args.sketch) {
-    const L = [`blast ${basis}`, ""];
+    const L = [`blast ${basis}${data.tier ? ` · tier ${data.tier}` : ""}`, ""];
     for (const s of seeds) {
       L.push(`${s.path}   fan-in ${s.fanIn} · churn ${s.churn} · ${riskOf(s)}`);
       const direct = [...(graph.importers.get(s.path) || [])].filter((p) => !changed.includes(p)).sort();
@@ -94,7 +95,7 @@ export function blast(root, args = {}) {
   }
 
   const out = [];
-  out.push(`strata blast — ${changed.length} changed file(s), ${basis}`);
+  out.push(`strata blast — ${changed.length} changed file(s), ${basis}${data.tier ? ` · tier ${data.tier}` : ""}`);
   out.push(`direct importers     ${(byDepth[0] || []).length}`);
   if (depth > 1) out.push(`transitive (${depth} hops)  ${affected.length}`);
   out.push(`tests touched        ${tests.size}`);
