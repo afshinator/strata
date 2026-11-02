@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 
 const MAX = 64 * 1024 * 1024;
 
-export function git(root, args) {
+function git(root, args) {
   return execFileSync("git", ["-C", root, ...args], {
     encoding: "utf8",
     maxBuffer: MAX,

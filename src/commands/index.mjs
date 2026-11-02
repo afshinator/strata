@@ -1,10 +1,10 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { git, head, isRepo, listFiles, history, topOwners } from "../lib/git.mjs";
+import { dirtyPaths, head, isRepo, listFiles, history, topOwners } from "../lib/git.mjs";
 import { scan, mapTests } from "../lib/scan.mjs";
 import { resolveImports, buildWorkspaces } from "../lib/imports.mjs";
 import { buildGraph, topoOrder } from "../lib/graph.mjs";
-import { writeIndex, writeText, lock, paths } from "../lib/store.mjs";
+import { writeIndex, writeText, lock, paths, DATA_DIR } from "../lib/store.mjs";
 import { IMPORT_LANGS } from "../lib/lang.mjs";
 
 function goModuleOf(root) {
@@ -60,9 +60,10 @@ export function index(root, args = {}) {
   try {
     const started = Date.now();
     const headSha = head(root);
-    const dirty = git(root, ["status", "--porcelain"]).trim().split("\n").filter(Boolean).length;
+    const inDataDir = (p) => p === DATA_DIR || p.startsWith(`${DATA_DIR}/`);
+    const dirty = dirtyPaths(root).filter((d) => !inDataDir(d.path)).length;
 
-    const allPaths = listFiles(root);
+    const allPaths = listFiles(root).filter((p) => !inDataDir(p));
     const { files, sources } = scan(root, allPaths);
     const fileSet = new Set(files.map((f) => f.path));
     const goModule = goModuleOf(root);

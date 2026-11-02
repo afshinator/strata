@@ -486,3 +486,37 @@ test("a specifier outside the workspace is labelled as outside the repository", 
   assert.match(labels[0], /not in this repo/, "the label says where it points");
   assert.doesNotMatch(labels[0], /tsconfig/, "not a guess about why");
 });
+
+test("the data dir is self-ignoring: the tree is clean after an index", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  assert.equal(sh(root, ["status", "--porcelain"]).trim(), "", "nothing untracked or modified");
+  assert.equal(readFileSync(join(root, ".strata/.gitignore"), "utf8").trim(), "*");
+});
+
+test("the data dir is not counted as a dirty file", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.equal(data.dirtyFiles, 0, "the tool's own artifacts are not a change");
+});
+
+test("a data dir committed by an earlier run is not indexed as source", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  sh(root, ["add", "-f", ".strata"]); // force: the data dir now ignores itself
+  sh(root, ["commit", "-m", "tool output from an older version"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.ok(!data.files.some((f) => f.path.startsWith(".strata/")), "no data-dir paths are sources");
+  assert.ok(!data.readingOrder.some((p) => p.startsWith(".strata/")), "nor in the reading order");
+});
+
+test("the tool writes nothing outside its data dir", () => {
+  const root = fixture();
+  const before = sh(root, ["ls-files"]).trim().split("\n").filter(Boolean).sort();
+  run(root, ["index"]);
+  const after = sh(root, ["ls-files"]).trim().split("\n").filter(Boolean).sort();
+  assert.deepEqual(after, before, "no new tracked paths");
+  assert.equal(sh(root, ["status", "--porcelain"]).trim(), "", "no tracked file modified");
+});

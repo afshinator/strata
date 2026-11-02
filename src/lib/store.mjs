@@ -1,7 +1,7 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync, openSync, closeSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync, openSync, closeSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const DATA_DIR = ".strata";
+export const DATA_DIR = ".strata";
 
 export function paths(root) {
   const dir = join(root, DATA_DIR);
@@ -15,7 +15,12 @@ export function paths(root) {
 }
 
 function ensureDir(root) {
-  mkdirSync(paths(root).dir, { recursive: true });
+  const dir = paths(root).dir;
+  mkdirSync(dir, { recursive: true });
+  // A data dir that ignores itself keeps the analysed tree clean: the tool's own
+  // output never shows up as a change, and never becomes a source.
+  const ignore = join(dir, ".gitignore");
+  if (!existsSync(ignore)) writeFileSync(ignore, "*\n");
 }
 
 export function readIndex(root) {
