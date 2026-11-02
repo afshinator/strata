@@ -1,6 +1,6 @@
 ---
 name: strata
-description: Answer "what depends on what", "what breaks if I change this", and "how is this area shaped" from a deterministic local index instead of reading or grepping the whole codebase. Use before exploring an unfamiliar repo, before committing a change, when scoping a review, or when asked about blast radius, architecture, reading order, or test coverage of a symbol.
+description: Answer "what depends on what", "what breaks if I change this", and "how is this area shaped" from a deterministic local index instead of reading or grepping the whole codebase. Use before exploring an unfamiliar repo, before committing a change, when scoping a review, or when asked about blast radius, architecture, reading order, or test coverage of a file.
 ---
 
 # strata
@@ -12,7 +12,7 @@ A deterministic index of the repo's import graph, churn, owners, and test mappin
 | Instead of | Run |
 |---|---|
 | opening files to find who uses something | `strata blast --json` after `--since <rev>` |
-| reading a README to learn the repo | read `.strata/MAP.md` (generated, ~150 lines) |
+| reading a README to learn the repo | read `.strata/MAP.md` (generated, under ~100 lines) |
 | grepping for "is this tested" | `strata blast` lists affected tests; `MAP.md` lists untested fan-in |
 | guessing whether the index is current | `strata status` |
 
@@ -41,7 +41,7 @@ strata status
 
 ## Output shape
 
-`strata index` prints counts and the next command. `MAP.md` sections in order: numbers, entry points, fan-in table, dependency-first reading order, cycles, hotspots, untested-and-depended-on, unresolved summary.
+`strata index` prints counts and the next command. `MAP.md` sections in order: numbers, entry points, fan-in table, dependency-first reading order, unorderable files, hotspots, untested-and-depended-on, unresolved summary.
 
 `strata blast` prints changed files, direct importers, tests, owners, and a per-file risk line (`HIGH` at fan-in ≥ 20, churn ≥ 30, or fan-in ≥ 10 with churn ≥ 10; `MEDIUM` at fan-in ≥ 5 or churn ≥ 10).
 

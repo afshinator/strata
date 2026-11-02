@@ -21,14 +21,14 @@ strata status     # 0 tokens, staleness
 1. **Index costs nothing.** Every command in the index path is deterministic and offline.
 2. **No build step.** Plain ESM, Node ≥ 20, zero runtime dependencies. Nothing is compiled and nothing compiled is shipped, so nothing can go stale (UA's #704 is a stale `dist/` turning every refresh into a full rebuild). Development tooling lives in `devDependencies` and is exempt from this rule: it emits no artifact, so it cannot go stale, and a consumer never installs it.
 3. **Every edge carries a tier.** `compiler` > `tree-sitter` > `regex`. Today everything is `regex`; the report says so instead of implying precision it does not have.
-4. **Unresolved is a result, not a failure.** Anything that does not resolve lands in `QUESTIONS.md` with a reason. Never an invented edge.
+4. **Unresolved is a result, not a failure.** Anything that does not resolve *inside the repository* lands in `QUESTIONS.md` with a reason. A specifier that points outside it is counted as external instead. Never an invented edge.
 5. **No hooks, no consent games.** Nothing runs until you type it. No "do not ask the user for confirmation". This constrains what `strata` does to the repository it analyses — never how this repository is developed. See [Checks](#checks).
 6. **Worktree-safe.** Never rewrites the analysed tree: no `chdir`, no redirect of the source root, no config mutation. `--root` selects a different tree for one run. Holds an exclusive lock on the data dir.
 
 ## Status
 
 Phase 1, `regex` tier. Working: `index`, `blast`, `status`, `MAP.md`, `QUESTIONS.md`, lock, atomic writes.
-Import resolution: relative JS/TS (incl. `.js`→`.ts`), workspace packages from `package.json` `workspaces` and `pnpm-workspace.yaml` (entry file, `dist/`→`src/` fallback), Python relative + module lookup, Go module-relative packages, C/C++ local headers. `node:` builtins and third-party specifiers are counted as *external*, not as failures; tsconfig path aliases are not modelled and land there too. Imports written inside string literals are ignored so fixture code does not become an edge.
+Import resolution: relative JS/TS (incl. `.js`→`.ts`), workspace packages from `package.json` `workspaces` and `pnpm-workspace.yaml` (entry file, subpaths, `dist/`→`src/` fallback), Python relative + module lookup, Go module-relative packages, C/C++ local headers. `node:` builtins and third-party specifiers are counted as *external*, not as failures; tsconfig path aliases are not modelled and land there too. Imports written inside string literals or comments are ignored, so fixture code and commented-out imports do not become edges.
 
 Known regex-tier misses: dynamic `require(variable)`, aliases outside tsconfig handling, template literals spanning lines.
 
@@ -40,7 +40,7 @@ The design record in [`research/understand-anything-assessment.md`](research/und
 |---|---|---|
 | TS/JS extraction done by `fallow` | homegrown `regex` extractor | rule 2 keeps the runtime dependency-free. `fallow` runs here as a dev tool on this repo, never as part of the pipeline |
 | co-change matrix from `git log --numstat` | churn only | needs `--numstat` parsing plus a coupling model, and churn alone already answers "what breaks" |
-| test mapping from a coverage file | naming convention only | a coverage file is language- and runner-specific; the convention needs nothing installed |
+| test mapping from a coverage file | naming convention plus the import graph | a coverage file is language- and runner-specific; the convention needs nothing installed |
 | changed *symbols* in `blast` | file granularity | symbol extraction is a `tree-sitter`-tier job, and the report says the tier it used |
 | `ask` / `describe` | not built | they spend tokens; the index path is defined as the part that does not |
 | per-claim `sourceHash` invalidation | not built | only meaningful once prose is stored, which needs `ask`/`describe` first |
@@ -80,8 +80,8 @@ A missing index is a notice and exits `0` for `blast`: it is a report, so it nev
 | Path | Content |
 |---|---|
 | `.strata/index.json` | files with language/churn/owners/tests, import edges, unresolved list, reading order, cycles |
-| `.strata/MAP.md` | generated briefing: numbers, entry points, fan-in table, dependency-first reading order, hotspots (churn × fan-in), untested-and-depended-on, unresolved summary |
-| `.strata/QUESTIONS.md` | everything the tool could not determine, one line each with `file:line` and a reason |
+| `.strata/MAP.md` | generated briefing: numbers, entry points, fan-in table, dependency-first reading order, hotspots (churn × (fan-in + 1)), untested-and-depended-on, unresolved summary |
+| `.strata/QUESTIONS.md` | everything the tool could not determine inside the repository, one line each with `file:line` and a reason |
 
 `.strata/` writes its own `.gitignore`, so the working tree stays clean and no index is needed. Committing the data dir is optional, and now takes an explicit `git add -f .strata`: that is the cost of it not polluting every status and blast you run without it.
 
