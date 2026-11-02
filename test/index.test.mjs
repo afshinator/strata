@@ -32,7 +32,9 @@ function fixture() {
 }
 
 function run(cwd, args) {
-  return execFileSync(process.execPath, [BIN, ...args, "--root", cwd], { cwd, encoding: "utf8" });
+  // Deliberately no --root: the default $PWD path is what most runs take, and
+  // forcing --root here is what hid the subdirectory defects from this suite.
+  return execFileSync(process.execPath, [BIN, ...args], { cwd, encoding: "utf8" });
 }
 
 test("index writes a graph with resolved relative edges and records the unresolved one", () => {
@@ -243,4 +245,34 @@ test("a lock path that cannot be a lock file refuses instead of crashing", () =>
     assert.match(String(err.stderr), /holds|refusing/);
     assert.doesNotMatch(String(err.stderr), /EISDIR|at readFileSync/, "no crash trace");
   }
+});
+
+test("index from a subdirectory anchors at the repository top level", () => {
+  const root = fixture();
+  const sub = join(root, "src");
+  run(sub, ["index"]);
+  assert.ok(existsSync(join(root, ".strata/index.json")), "data dir written at the top level");
+  assert.ok(!existsSync(join(sub, ".strata")), "no data dir inside the subdirectory");
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const ledger = data.files.find((f) => f.path === "src/billing/ledger.ts");
+  assert.ok(ledger, "file paths stay top-level relative");
+  assert.ok(ledger.churn > 0, "churn is computed, not silently zero");
+  assert.ok(ledger.owners.length > 0, "owners are computed, not silently empty");
+});
+
+test("blast from a subdirectory finds the top-level index and reports the change", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  writeFileSync(join(root, "src/db.ts"), "export const db = 9;\n");
+  const out = run(join(root, "src"), ["blast"]);
+  assert.match(out, /1 changed file/);
+  assert.match(out, /src\/db\.ts/);
+});
+
+test("an explicit --root still indexes the tree it names and leaves the cwd alone", () => {
+  const root = fixture();
+  const other = fixture();
+  run(root, ["index", "--root", other]);
+  assert.ok(existsSync(join(other, ".strata/index.json")), "the named tree was indexed");
+  assert.ok(!existsSync(join(root, ".strata/index.json")), "the cwd was not touched");
 });

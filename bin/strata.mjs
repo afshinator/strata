@@ -2,6 +2,7 @@
 import { index } from "../src/commands/index.mjs";
 import { blast } from "../src/commands/blast.mjs";
 import { status } from "../src/commands/status.mjs";
+import { toplevel } from "../src/lib/git.mjs";
 
 const USAGE = `strata — deterministic codebase index
 
@@ -31,7 +32,9 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv.slice(2));
 const cmd = args._[0];
-const root = args.root ? args.root : process.cwd();
+// git prints paths relative to the worktree root, so the tool must resolve from there too.
+const cwd = process.cwd();
+const root = args.root ? args.root : toplevel(cwd) || cwd;
 
 switch (cmd) {
   case "index":
@@ -41,7 +44,7 @@ switch (cmd) {
     process.exitCode = blast(root, args);
     break;
   case "status":
-    process.exitCode = status(root, args);
+    process.exitCode = status(root);
     break;
   case undefined:
   case "help":

@@ -22,6 +22,12 @@ export function isRepo(root) {
   return tryGit(root, ["rev-parse", "--git-dir"]) !== null;
 }
 
+/** Git resolves every path it prints from the worktree root, so we must too. */
+export function toplevel(root) {
+  const out = tryGit(root, ["rev-parse", "--show-toplevel"]);
+  return out ? out.trim() : null;
+}
+
 export function head(root) {
   return (tryGit(root, ["rev-parse", "HEAD"]) || "").trim() || null;
 }
