@@ -1,0 +1,15 @@
+#!/bin/sh
+# Every-change gate before a push. Install once per clone:
+#   git config core.hooksPath .githooks
+# Bypass with `git push --no-verify`; CI runs the same commands either way.
+set -e
+
+# strata has zero runtime dependencies, so a fresh clone may have no toolchain.
+if [ ! -x node_modules/.bin/tsc ]; then
+  echo "strata pre-push: skipping checks, no dev toolchain (run: npm install)" >&2
+  exit 0
+fi
+
+npm run --silent check
+npm run --silent dead-code
+npm test --silent

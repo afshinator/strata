@@ -22,7 +22,7 @@ strata status     # 0 tokens, staleness
 2. **No build step.** Plain ESM, Node ≥ 20, zero runtime dependencies. Nothing is compiled and nothing compiled is shipped, so nothing can go stale (UA's #704 is a stale `dist/` turning every refresh into a full rebuild). Development tooling lives in `devDependencies` and is exempt from this rule: it emits no artifact, so it cannot go stale, and a consumer never installs it.
 3. **Every edge carries a tier.** `compiler` > `tree-sitter` > `regex`. Today everything is `regex`; the report says so instead of implying precision it does not have.
 4. **Unresolved is a result, not a failure.** Anything that does not resolve lands in `QUESTIONS.md` with a reason. Never an invented edge.
-5. **No hooks, no consent games.** Nothing runs until you type it. No "do not ask the user for confirmation".
+5. **No hooks, no consent games.** Nothing runs until you type it. No "do not ask the user for confirmation". This constrains what `strata` does to the repository it analyses — never how this repository is developed. See [Checks](#checks).
 6. **Worktree-safe.** Never rewrites the analysed tree: no `chdir`, no redirect of the source root, no config mutation. `--root` selects a different tree for one run. Holds an exclusive lock on the data dir.
 
 ## Status
@@ -55,7 +55,7 @@ Exit codes: `0` ok, `2` usage/refused (not a git repo, missing index, held lock)
 
 `.strata/` is gitignored by default. Commit it only if you want teammates to skip the (free) index.
 
-## Test
+## Checks
 
 ```bash
 npm test           # node:test, real temp git repos, no mocks
@@ -65,3 +65,11 @@ npm run health     # fallow: complexity, duplication, maintainability (report on
 ```
 
 The type check and the analysers are separate from `npm test` on purpose: the suite runs on bare Node, so it never depends on the toolchain being installed.
+
+A `pre-push` hook and a GitHub Actions workflow run the same gates. The hook is opt-in per clone, so nothing runs until you ask for it:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Bypass it with `git push --no-verify`; CI runs the same commands either way. The hook skips itself when no dev toolchain is installed, since this repo ships zero runtime dependencies and `npm install` is optional.
