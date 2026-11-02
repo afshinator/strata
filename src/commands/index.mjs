@@ -71,7 +71,7 @@ export function index(root, args = {}) {
     const workspaces = buildWorkspaces(root);
     const { edges, unresolved, external } = resolveImports({ files, fileSet, sources, goModule, workspaces });
     const graph = buildGraph(edges, files);
-    const { testsFor, mappedTests } = mapTests(files);
+    const { testsFor, mappedTests } = mapTests(files, graph);
     const hist = history(root);
     const { order, inCycle } = topoOrder(graph, files.map((f) => f.path));
 

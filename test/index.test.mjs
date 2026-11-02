@@ -626,3 +626,75 @@ test("status reports when the index was built without the artifact storing it", 
   assert.equal(r.code, 0);
   assert.match(r.out, /index\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/, "built-at time is shown");
 });
+
+function testDirFixture() {
+  const root = mkdtempSync(join(tmpdir(), "strata-tests-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "t@example.com"]);
+  sh(root, ["config", "user.name", "t"]);
+  mkdirSync(join(root, "src/other"), { recursive: true });
+  mkdirSync(join(root, "test/unit"), { recursive: true });
+  mkdirSync(join(root, "test/spec"), { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "tm" }));
+  writeFileSync(join(root, "src/a.ts"), "export const a = 1;\n");
+  writeFileSync(join(root, "test/unit/a.test.ts"), 'import { a } from "../../src/a";\n');
+  writeFileSync(join(root, "src/colocated.ts"), "export const c = 1;\n");
+  writeFileSync(join(root, "src/colocated.test.ts"), 'import { c } from "./colocated";\n');
+  writeFileSync(join(root, "test/unit/colocated.test.ts"), 'import { c } from "../../src/colocated";\n');
+  writeFileSync(join(root, "src/dup.ts"), "export const d = 1;\n");
+  writeFileSync(join(root, "test/unit/dup.test.ts"), 'import { d } from "../../src/dup";\n');
+  writeFileSync(join(root, "test/spec/dup.test.ts"), 'import { d } from "../../src/dup";\n');
+  writeFileSync(join(root, "src/m.mjs"), "export const m = 1;\n");
+  writeFileSync(join(root, "test/unit/m.test.mjs"), 'import { m } from "../../src/m";\n');
+  writeFileSync(join(root, "src/none.ts"), "export const n = 1;\n");
+  writeFileSync(join(root, "src/other/none.test.ts"), "export const unrelated = 1;\n");
+  writeFileSync(join(root, "src/imported.ts"), "export const i = 1;\n");
+  writeFileSync(join(root, "test/unit/weirdly-named.test.ts"), 'import { i } from "../../src/imported";\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "tests"]);
+  run(root, ["index"]);
+  return root;
+}
+
+const indexOf = (root) => JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+
+test("a test under a repo-level test directory is mapped to its source", () => {
+  const data = indexOf(testDirFixture());
+  assert.deepEqual(data.files.find((f) => f.path === "src/a.ts").tests, ["test/unit/a.test.ts"]);
+});
+
+test("a co-located test wins over a repo-level one with the same name", () => {
+  const data = indexOf(testDirFixture());
+  assert.deepEqual(data.files.find((f) => f.path === "src/colocated.ts").tests, ["src/colocated.test.ts"]);
+});
+
+test("an .mjs test under a test directory is mapped too", () => {
+  const data = indexOf(testDirFixture());
+  assert.deepEqual(data.files.find((f) => f.path === "src/m.mjs").tests, ["test/unit/m.test.mjs"]);
+});
+
+test("every matching test is reported, never a silent pick", () => {
+  const data = indexOf(testDirFixture());
+  assert.deepEqual(data.files.find((f) => f.path === "src/dup.ts").tests.sort(), [
+    "test/spec/dup.test.ts",
+    "test/unit/dup.test.ts",
+  ]);
+});
+
+test("a .test.ts outside a test directory does not claim a source in another directory", () => {
+  const data = indexOf(testDirFixture());
+  assert.deepEqual(data.files.find((f) => f.path === "src/none.ts").tests, []);
+});
+
+test("a test that imports the source is mapped whatever the test is called", () => {
+  const data = indexOf(testDirFixture());
+  assert.deepEqual(data.files.find((f) => f.path === "src/imported.ts").tests, ["test/unit/weirdly-named.test.ts"]);
+});
+
+test("blast lists tests mapped through a repo-level test directory", () => {
+  const root = testDirFixture();
+  writeFileSync(join(root, "src/a.ts"), "export const a = 2;\n");
+  const out = run(root, ["blast"]);
+  const affected = out.split("affected tests")[1] || "";
+  assert.match(affected, /test\/unit\/a\.test\.ts/, "listed as an affected test, not merely as an importer");
+});
