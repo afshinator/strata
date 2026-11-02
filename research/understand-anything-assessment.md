@@ -99,6 +99,8 @@ Scale: a 1,000-file repo is ≥85 agent dispatches (`SKILL.md:341,447`: 81 batch
 
 ## 4. The replacement: one skill, three modes, deterministic core
 
+> **This section is the design record, not a description of the shipped tool.** What exists today, and what is deliberately deferred, is authoritative in the README's *Status* section. Two departures are worth naming here: the TS/JS extractor shipped as a homegrown `regex` tier rather than through `fallow`, because the repo keeps zero runtime dependencies and `fallow` runs only as dev tooling on the repo itself; and `ask`/`describe` are not built, so D2, D3 and D8 describe intent, not behaviour.
+
 Name: `codemap`. Not a port — a different split of the same problem. Their mistake is architectural, not engineering: they analyse the whole repo semantically *before anyone asks a question*. We index deterministically, then answer on demand.
 
 ### D1 — Build is 0 tokens

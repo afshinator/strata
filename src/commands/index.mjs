@@ -187,7 +187,7 @@ function renderMap({ data, ident, graph, files, testsFor, mappedTests, hist, gen
   L.push("");
 
   if (data.cycles.length) {
-    L.push("## Cycles", "", `${data.cycles.length} files are unreachable from a topological order:`, "");
+    L.push("## Unorderable files", "", `${data.cycles.length} files are unreachable from a topological order:`, "");
     for (const p of data.cycles.slice(0, 15)) L.push(`- \`${p}\``);
     L.push("");
   }

@@ -32,7 +32,7 @@ strata status
 ## Rules
 
 1. **Run `strata index` first, once per session, only if `.strata/index.json` is missing or `strata status` reports pending files.** Do not re-index after every edit.
-2. **Read the tier before trusting an edge.** `regex` means relative/computed imports can be missed; bare specifiers are intentionally unresolved (see `QUESTIONS.md`). Say so when reporting, rather than presenting a regex graph as compiler truth.
+2. **Read the tier before trusting an edge.** `regex` means relative/computed imports can be missed. A specifier that does not point inside the repository is counted as *external* and totalled under Numbers in `MAP.md`; it is not listed in `QUESTIONS.md`, which holds in-repo misses only. Say so when reporting, rather than presenting a regex graph as compiler truth.
 3. **Cite `file:line`.** `blast` and `QUESTIONS.md` give paths and lines; `MAP.md` gives the shape. Never summarise the index without a citation.
 4. **Report what was not analysed.** `QUESTIONS.md` and the untracked/not-indexed note in `blast` are part of the answer, not noise.
 5. **Do not add a dashboard.** For a picture, render the answer with `show-me` (importer tree, call tree, `diff`), not with a server.

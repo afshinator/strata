@@ -31,12 +31,34 @@ Phase 1, `regex` tier. Working: `index`, `blast`, `status`, `MAP.md`, `QUESTIONS
 Import resolution: relative JS/TS (incl. `.js`→`.ts`), workspace packages from `package.json` `workspaces` and `pnpm-workspace.yaml` (entry file, `dist/`→`src/` fallback), Python relative + module lookup, Go module-relative packages, C/C++ local headers. `node:` builtins and third-party specifiers are counted as *external*, not as failures; tsconfig path aliases are not modelled and land there too. Imports written inside string literals are ignored so fixture code does not become an edge.
 
 Known regex-tier misses: dynamic `require(variable)`, aliases outside tsconfig handling, template literals spanning lines.
-Not built yet: tree-sitter tier, `compiler` tier via LSP/`tsc`, `ask`, docs layer. The docs-layer tooling is already chosen and measured in [`research/strata-docs-layer-tooling.md`](research/strata-docs-layer-tooling.md): lychee, vale, typos, ast-grep, mdast.
+
+### Deferred, and why
+
+The design record in [`research/understand-anything-assessment.md`](research/understand-anything-assessment.md) §4 is a sketch written before Phase 1. Where it promises something that does not exist, this table is the authoritative answer:
+
+| Promised there | Today | Why it is deferred |
+|---|---|---|
+| TS/JS extraction done by `fallow` | homegrown `regex` extractor | rule 2 keeps the runtime dependency-free. `fallow` runs here as a dev tool on this repo, never as part of the pipeline |
+| co-change matrix from `git log --numstat` | churn only | needs `--numstat` parsing plus a coupling model, and churn alone already answers "what breaks" |
+| test mapping from a coverage file | naming convention only | a coverage file is language- and runner-specific; the convention needs nothing installed |
+| changed *symbols* in `blast` | file granularity | symbol extraction is a `tree-sitter`-tier job, and the report says the tier it used |
+| `ask` / `describe` | not built | they spend tokens; the index path is defined as the part that does not |
+| per-claim `sourceHash` invalidation | not built | only meaningful once prose is stored, which needs `ask`/`describe` first |
+| token estimate and per-tier counts in `status` | not built | there is one tier, so a budget has nothing to compare |
+| branch-aware staleness in `status` | commit comparison only | the index records a commit, not a branch; HEAD drift is the honest signal |
+| a run id in every artifact | not built | the lock serialises writers, so two runs cannot interleave artifacts |
+| `tree-sitter` and `compiler` tiers | `regex` only | each is a separate resolver, and the report already names the tier in use |
+
+Not started at all: the docs layer. Its tooling is already chosen and measured in [`research/strata-docs-layer-tooling.md`](research/strata-docs-layer-tooling.md) — lychee, vale, typos, ast-grep, mdast.
 
 ## Use
 
 ```bash
 node bin/strata.mjs index                 # or: npm link && strata index
+strata index [--root <dir>] [--quiet]     # the full signature, same as --help
+strata blast [--since <rev>] [--depth N] [--json] [--sketch]
+strata status
+
 strata blast --since HEAD~1               # what imports what changed
 strata blast --depth 2 --json             # transitive, machine-readable
 strata blast --sketch                     # importer tree instead of a table
@@ -61,7 +83,7 @@ A missing index is a notice and exits `0` for `blast`: it is a report, so it nev
 | `.strata/MAP.md` | generated briefing: numbers, entry points, fan-in table, dependency-first reading order, hotspots (churn × fan-in), untested-and-depended-on, unresolved summary |
 | `.strata/QUESTIONS.md` | everything the tool could not determine, one line each with `file:line` and a reason |
 
-`.strata/` is gitignored by default. Commit it only if you want teammates to skip the (free) index.
+`.strata/` writes its own `.gitignore`, so the working tree stays clean and no index is needed. Committing the data dir is optional, and now takes an explicit `git add -f .strata`: that is the cost of it not polluting every status and blast you run without it.
 
 ## Checks
 
