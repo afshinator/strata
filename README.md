@@ -103,3 +103,15 @@ git config core.hooksPath .githooks
 ```
 
 Bypass it with `git push --no-verify`; CI runs the same commands either way. The hook skips itself when no dev toolchain is installed, since this repo ships zero runtime dependencies and `npm install` is optional.
+
+## Landing changes
+
+`main` is protected: it takes a pull request, and all three `check` jobs must pass before the merge. `enforce_admins` is on, so this applies to maintainers too — the branch cannot be pushed to directly.
+
+```bash
+git switch -c <topic>
+# ... commit ...
+git push -u origin <topic>
+gh pr create --fill
+gh pr merge --squash    # once the checks are green
+```
