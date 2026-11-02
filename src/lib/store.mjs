@@ -42,7 +42,11 @@ export function writeText(root, file, content) {
   writeAtomic(file, content);
 }
 
-/** Exclusive lock so two agents cannot interleave writes into one data dir. */
+/**
+ * Exclusive lock so two agents cannot interleave writes into one data dir.
+ * shortcut: liveness is proved by pid only, so a reused pid keeps a stale lock
+ * alive. Store a timestamp beside the pid and expire on age if that ever bites.
+ */
 export function lock(root) {
   ensureDir(root);
   const file = paths(root).lock;
@@ -72,11 +76,17 @@ export function lock(root) {
         }
         return null;
       }
-      const holder = Number(String(readFileSync(file, "utf8")).trim());
+      let holder = NaN;
+      try {
+        holder = Number(String(readFileSync(file, "utf8")).trim());
+      } catch {
+        /* vanished or unreadable: not evidence of a live holder */
+      }
       if (Number.isInteger(holder) && holder > 0 && isAlive(holder)) return null;
       try {
         unlinkSync(file);
-      } catch {
+      } catch (e) {
+        if (e.code === "ENOENT") continue; // the holder released itself; retry the open
         return null;
       }
     }

@@ -207,3 +207,40 @@ test("usage documents the flags that exist and omits the ones that do not", () =
   assert.match(help, /--sketch/);
   assert.doesNotMatch(help, /--data-dir/);
 });
+
+test("an unreadable lock is not evidence of a live holder", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".strata"), { recursive: true });
+  const lockPath = join(root, ".strata/lock");
+  // Fault injection: reading the holder fails, as it does for EACCES or a vanishing file.
+  const script = `
+    import { createRequire, syncBuiltinESMExports } from "node:module";
+    const req = createRequire(import.meta.url + "x");
+    const fs = req("node:fs");
+    const realRead = fs.readFileSync;
+    fs.readFileSync = function (p, ...r) {
+      if (String(p).endsWith("lock")) { const e = new Error("EACCES"); e.code = "EACCES"; throw e; }
+      return realRead.call(fs, p, ...r);
+    };
+    syncBuiltinESMExports();
+    fs.writeFileSync(${JSON.stringify(lockPath)}, "1");
+    const store = await import(${JSON.stringify(STORE)});
+    const lk = store.lock(${JSON.stringify(root)});
+    console.log(lk === null ? "refused" : "held");
+  `;
+  const out = execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(out.trim(), "held");
+});
+
+test("a lock path that cannot be a lock file refuses instead of crashing", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".strata/lock"), { recursive: true });
+  try {
+    run(root, ["index"]);
+    assert.fail("expected the run to refuse");
+  } catch (err) {
+    assert.equal(err.status, 2, "refused, not an uncaught throw");
+    assert.match(String(err.stderr), /holds|refusing/);
+    assert.doesNotMatch(String(err.stderr), /EISDIR|at readFileSync/, "no crash trace");
+  }
+});
