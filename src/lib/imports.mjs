@@ -197,20 +197,23 @@ function extractImports(lang, source) {
   return out;
 }
 
-function tryJsCandidates(fromPath, spec, fileSet) {
-  const dir = posix.dirname(fromPath);
-  const target = posix.normalize(posix.join(dir, spec));
-  const bases = [target];
+/** Resolve a repo-relative base to a real file, trying extensions and index files. */
+function resolveFile(base, fileSet) {
+  const bases = [base];
   // TS emits .js specifiers that point at .ts sources.
-  if (target.endsWith(".js")) bases.push(target.slice(0, -3) + ".ts", target.slice(0, -3) + ".tsx");
-  if (target.endsWith(".mjs")) bases.push(target.slice(0, -4) + ".mts");
+  if (base.endsWith(".js")) bases.push(base.slice(0, -3) + ".ts", base.slice(0, -3) + ".tsx");
+  if (base.endsWith(".mjs")) bases.push(base.slice(0, -4) + ".mts");
 
-  for (const base of bases) {
-    if (fileSet.has(base)) return base;
-    for (const ext of JS_EXT) if (fileSet.has(base + ext)) return base + ext;
-    for (const ext of JS_EXT) if (fileSet.has(posix.join(base, "index" + ext))) return posix.join(base, "index" + ext);
+  for (const b of bases) {
+    if (fileSet.has(b)) return b;
+    for (const ext of JS_EXT) if (fileSet.has(b + ext)) return b + ext;
+    for (const ext of JS_EXT) if (fileSet.has(posix.join(b, "index" + ext))) return posix.join(b, "index" + ext);
   }
   return null;
+}
+
+function tryJsCandidates(fromPath, spec, fileSet) {
+  return resolveFile(posix.normalize(posix.join(posix.dirname(fromPath), spec)), fileSet);
 }
 
 function makePythonIndex(fileSet) {
@@ -265,29 +268,20 @@ function resolveWorkspace(spec, workspaces, fileSet) {
   const name = spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
   const sub = parts.slice(spec.startsWith("@") ? 2 : 1).join("/");
   const hit = workspaces.get(name);
-  if (!hit) return { external: "external dependency (tsconfig paths not modelled in v0.1)" };
-  const base = sub ? posix.join(hit.dir, sub) : hit.dir;
+  if (!hit) return { external: "not in this repo: third-party dependency or unmodelled alias" };
+  // A subpath names its own file. It never falls back to the package entry.
   if (sub) {
-    const cand = tryJsCandidates(posix.join(base, "x"), "." + "/" + posix.basename(base), fileSet);
-    if (cand) return { to: [cand] };
+    const cand = resolveFile(posix.join(hit.dir, sub), fileSet);
+    return cand ? { to: [cand] } : { reason: `workspace subpath '${spec}' does not resolve` };
   }
-  const direct = [];
-  if (hit.main) {
-    const main = posix.normalize(posix.join(hit.dir, hit.main));
-    direct.push(main, ...JS_EXT.map((e) => main.replace(/\.[cm]?js$/, "") + e));
-    // Build output paths (dist/index.js) point at nothing in git; try the source tree.
-    if (main.includes("/dist/")) {
-      const src = main.replace("/dist/", "/src/");
-      direct.push(src, ...JS_EXT.map((e) => src.replace(/\.[cm]?js$/, "") + e));
-    }
-  }
-  for (const p of direct) if (fileSet.has(p)) return { to: [p] };
-  // Any shallow entry file inside the package.
-  const inside = [...fileSet]
-    .filter((p) => p.startsWith(hit.dir + "/") && /(^|\/)(index|main)\.(t|j)sx?$/.test(p))
-    .sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
-  if (inside.length) return { to: [inside[0]] };
-  return { reason: `workspace package '${name}' has no resolvable entry file` };
+  if (!hit.main) return { reason: `workspace package '${name}' declares no entry file` };
+  const main = posix.normalize(posix.join(hit.dir, hit.main));
+  // Build output paths point at nothing in git; the source tree is the real target.
+  const cand =
+    resolveFile(main, fileSet) ||
+    (main.includes("/dist/") ? resolveFile(main.replace("/dist/", "/src/"), fileSet) : null);
+  if (cand) return { to: [cand] };
+  return { reason: `workspace '${name}' main '${hit.main}' does not resolve` };
 }
 
 export function resolveImports({ files, fileSet, sources, goModule, workspaces = new Map() }) {

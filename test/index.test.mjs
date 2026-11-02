@@ -49,7 +49,7 @@ test("index writes a graph with resolved relative edges and records the unresolv
   assert.ok(pairs.includes("src/billing/invoice.ts->src/db.ts"), "relative import resolves");
   assert.ok(pairs.includes("src/billing/ledger.ts->src/billing/invoice.ts"));
   assert.equal(data.unresolved.length, 0, "external dependency is not a repo edge and not a failure");
-  assert.ok(data.stats.external["external dependency (tsconfig paths not modelled in v0.1)"] >= 1);
+  assert.ok(data.stats.external["not in this repo: third-party dependency or unmodelled alias"] >= 1);
 
   const map = readFileSync(join(root, ".strata/MAP.md"), "utf8");
   assert.match(map, /Everything depends on these/);
@@ -408,4 +408,81 @@ test("every import form is extracted", () => {
   const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
   const to = data.edges.filter((e) => e.from === "src/forms.ts").map((e) => e.to).sort();
   assert.deepEqual(to, ["src/billing/invoice.ts", "src/billing/ledger.ts", "src/db.ts"], "from, require and import() all seen");
+});
+
+function monoFixture() {
+  const root = mkdtempSync(join(tmpdir(), "strata-mono-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "t@example.com"]);
+  sh(root, ["config", "user.name", "t"]);
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "mono", workspaces: ["packages/*"] }));
+  for (const d of ["missing/lib", "lib/attr", "lib/src", "build/src", "app/src"]) {
+    mkdirSync(join(root, "packages", d), { recursive: true });
+  }
+  // main names a build output that exists nowhere in the repository.
+  writeFileSync(join(root, "packages/missing/package.json"), JSON.stringify({ name: "@m/core", main: "./dist/missing.js" }));
+  writeFileSync(join(root, "packages/missing/lib/index.ts"), "export const helper = 1;\n");
+  // a package with a subpath file and an entry.
+  writeFileSync(join(root, "packages/lib/package.json"), JSON.stringify({ name: "@x/lib", main: "./src/index.ts" }));
+  writeFileSync(join(root, "packages/lib/src/index.ts"), "export const lib = 1;\n");
+  writeFileSync(join(root, "packages/lib/attr/deep.ts"), "export const deep = 1;\n");
+  // main names a build output that maps onto the source tree.
+  writeFileSync(join(root, "packages/build/package.json"), JSON.stringify({ name: "@x/build", main: "./dist/index.js" }));
+  writeFileSync(join(root, "packages/build/src/index.ts"), "export const built = 1;\n");
+  writeFileSync(join(root, "packages/app/package.json"), JSON.stringify({ name: "@x/app" }));
+  writeFileSync(
+    join(root, "packages/app/src/main.ts"),
+    [
+      'import { helper } from "@m/core";',
+      'import { deep } from "@x/lib/attr/deep";',
+      'import { nope } from "@x/lib/attr/nope";',
+      'import { lib } from "@x/lib";',
+      'import { built } from "@x/build";',
+      'import lodash from "lodash";',
+      "export const all = [helper, deep, nope, lib, built, lodash];",
+    ].join("\n") + "\n",
+  );
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "mono"]);
+  run(root, ["index"]);
+  return JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+}
+
+test("a workspace main that does not exist becomes a question, not a guessed edge", () => {
+  const data = monoFixture();
+  const app = "packages/app/src/main.ts";
+  assert.equal(data.edges.filter((e) => e.from === app && e.spec === "@m/core").length, 0, "no invented edge");
+  const q = data.unresolved.filter((u) => u.file === app && u.spec === "@m/core");
+  assert.equal(q.length, 1, "reported as unresolved");
+  assert.match(q[0].reason, /main/, "the reason names the cause");
+});
+
+test("a workspace subpath resolves to its own file, or to a reason - never the entry", () => {
+  const data = monoFixture();
+  const app = "packages/app/src/main.ts";
+  const deep = data.edges.find((e) => e.from === app && e.spec === "@x/lib/attr/deep");
+  assert.ok(deep, "the subpath resolves");
+  assert.equal(deep.to, "packages/lib/attr/deep.ts", "to the subpath's file");
+  assert.equal(
+    data.edges.filter((e) => e.from === app && e.spec === "@x/lib/attr/nope").length,
+    0,
+    "a missing subpath invents nothing",
+  );
+  const q = data.unresolved.filter((u) => u.file === app && u.spec === "@x/lib/attr/nope");
+  assert.equal(q.length, 1, "the miss is reported, not swallowed");
+});
+
+test("a resolvable workspace import still reaches the entry, including dist -> src", () => {
+  const data = monoFixture();
+  const app = "packages/app/src/main.ts";
+  assert.equal(data.edges.find((e) => e.from === app && e.spec === "@x/lib")?.to, "packages/lib/src/index.ts");
+  assert.equal(data.edges.find((e) => e.from === app && e.spec === "@x/build")?.to, "packages/build/src/index.ts");
+});
+
+test("a specifier outside the workspace is labelled as outside the repository", () => {
+  const data = monoFixture();
+  const labels = Object.keys(data.stats.external);
+  assert.equal(labels.length, 1, "one bucket");
+  assert.match(labels[0], /not in this repo/, "the label says where it points");
+  assert.doesNotMatch(labels[0], /tsconfig/, "not a guess about why");
 });
