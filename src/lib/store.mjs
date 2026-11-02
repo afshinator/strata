@@ -46,20 +46,49 @@ export function writeText(root, file, content) {
 export function lock(root) {
   ensureDir(root);
   const file = paths(root).lock;
-  try {
-    const fd = openSync(file, "wx");
-    writeFileSync(fd, String(process.pid));
-    closeSync(fd);
-  } catch {
-    return null;
-  }
-  return {
-    release() {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(file, "wx");
+      try {
+        writeFileSync(fd, String(process.pid));
+      } finally {
+        closeSync(fd);
+      }
+      return {
+        release() {
+          try {
+            unlinkSync(file);
+          } catch {
+            /* already gone */
+          }
+        },
+      };
+    } catch (err) {
+      if (err.code !== "EEXIST") {
+        try {
+          unlinkSync(file);
+        } catch {
+          /* nothing of ours to clean up */
+        }
+        return null;
+      }
+      const holder = Number(String(readFileSync(file, "utf8")).trim());
+      if (Number.isInteger(holder) && holder > 0 && isAlive(holder)) return null;
       try {
         unlinkSync(file);
       } catch {
-        /* already gone */
+        return null;
       }
-    },
-  };
+    }
+  }
+  return null;
+}
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM"; // exists, owned by another user
+  }
 }

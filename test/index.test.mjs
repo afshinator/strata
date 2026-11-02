@@ -8,6 +8,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "strata.mjs");
+const STORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "lib", "store.mjs");
 
 function sh(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -84,16 +85,51 @@ test("status with no index tells the user what to run instead of scanning", () =
   assert.match(out, /Run `strata index`/);
 });
 
-test("a second concurrent run refuses rather than interleaving writes", () => {
+test("a stale lock is reclaimed instead of bricking the next run", () => {
+  const root = fixture();
+  // A pid that has certainly exited: its own child printed it as it died.
+  const deadPid = execFileSync(process.execPath, ["-e", "console.log(process.pid)"], { encoding: "utf8" }).trim();
+  mkdirSync(join(root, ".strata"), { recursive: true });
+  writeFileSync(join(root, ".strata/lock"), deadPid);
+  const out = run(root, ["index"]);
+  assert.match(out, /strata index/);
+  assert.ok(!existsSync(join(root, ".strata/lock")), "the reclaimed lock is gone");
+});
+
+test("a live lock still refuses rather than interleaving writes", () => {
   const root = fixture();
   mkdirSync(join(root, ".strata"), { recursive: true });
-  writeFileSync(join(root, ".strata/lock"), "999999");
+  writeFileSync(join(root, ".strata/lock"), String(process.pid));
   try {
     run(root, ["index"]);
     assert.fail("expected the lock to block the run");
   } catch (err) {
     assert.match(String(err.stderr || err.message), /holding|holds|refusing/);
   }
+});
+
+test("a failure while recording the holder leaves no lock behind", () => {
+  const root = fixture();
+  const lockPath = join(root, ".strata/lock");
+  // Fault injection: only the lock's own fd write fails, so the leak path is exercised.
+  const script = `
+    import { createRequire, syncBuiltinESMExports } from "node:module";
+    const req = createRequire(import.meta.url + "x");
+    const fs = req("node:fs");
+    const real = fs.writeFileSync;
+    let armed = false;
+    fs.writeFileSync = function (t, ...r) {
+      if (armed && typeof t === "number") throw new Error("ENOSPC");
+      return real.call(fs, t, ...r);
+    };
+    syncBuiltinESMExports();
+    armed = true;
+    const store = await import(${JSON.stringify(STORE)});
+    const lk = store.lock(${JSON.stringify(root)});
+    console.log(lk === null ? "refused" : "held", fs.existsSync(${JSON.stringify(lockPath)}) ? "leaked" : "clean");
+  `;
+  const out = execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(out.trim(), "refused clean");
 });
 
 test("risk thresholds escalate on fan-in and churn", () => {
