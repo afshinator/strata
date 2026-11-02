@@ -347,3 +347,65 @@ test("a cycle is listed and no file is dropped", () => {
   assert.ok(data.cycles.includes("src/q.ts"), "q is unorderable");
   assert.equal(data.readingOrder.length + data.cycles.length, data.files.length, "nothing dropped");
 });
+
+test("commented-out imports never become edges", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/c_line.ts"), '// import { db } from "./db"\nexport const x = 1;\n');
+  writeFileSync(join(root, "src/c_block.ts"), '/* import { db } from "./db" */\nexport const x = 1;\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "comments"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  for (const file of ["src/c_line.ts", "src/c_block.ts"]) {
+    assert.equal(data.edges.filter((e) => e.from === file).length, 0, `${file} contributes no edge`);
+    assert.equal(data.unresolved.filter((u) => u.file === file).length, 0, `${file} contributes no question`);
+  }
+});
+
+test("a side-effect import is an edge", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/side.ts"), 'import "./db";\nexport const x = 1;\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "side effect"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const hits = data.edges.filter((e) => e.from === "src/side.ts");
+  assert.equal(hits.length, 1, "one edge");
+  assert.equal(hits[0].to, "src/db.ts");
+});
+
+test("an import written inside a string literal stays out of the graph", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/fixture_str.ts"), 'const s = "import y from \'./db\'";\nexport const x = s;\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "fixture string"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.equal(data.edges.filter((e) => e.from === "src/fixture_str.ts").length, 0);
+});
+
+test("a URL in a string does not truncate the rest of its line", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/url.ts"), 'const u = "https://example.com/a";\nimport { db } from "./db";\nexport const x = u + db;\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "url"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const hits = data.edges.filter((e) => e.from === "src/url.ts");
+  assert.equal(hits.length, 1, "the import after the URL is still seen");
+  assert.equal(hits[0].to, "src/db.ts");
+});
+
+test("every import form is extracted", () => {
+  const root = fixture();
+  writeFileSync(
+    join(root, "src/forms.ts"),
+    'import { db } from "./db";\nconst a = require("./billing/invoice");\nconst b = import("./billing/ledger");\nexport const x = [db, a, b];\n',
+  );
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "forms"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const to = data.edges.filter((e) => e.from === "src/forms.ts").map((e) => e.to).sort();
+  assert.deepEqual(to, ["src/billing/invoice.ts", "src/billing/ledger.ts", "src/db.ts"], "from, require and import() all seen");
+});

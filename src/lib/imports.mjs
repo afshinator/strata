@@ -103,17 +103,73 @@ function insideString(source, idx) {
   return dq % 2 === 1 || sq % 2 === 1 || bt % 2 === 1;
 }
 
+/**
+ * Blank out JS/TS comments while keeping byte offsets and newlines, so line numbers
+ * and the string-literal guard stay valid. String-aware: `"https://x"` is not a
+ * comment, and a commented-out import is not source.
+ * shortcut: a `//` inside a template-literal ${} is treated as a comment.
+ */
+function stripComments(source) {
+  let out = "";
+  let i = 0;
+  let quote = null;
+  while (i < source.length) {
+    const c = source[i];
+    if (quote) {
+      if (c === "\\") {
+        out += c + (source[i + 1] ?? "");
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        out += " ";
+        i++;
+      }
+      continue;
+    }
+    if (c === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+        out += source[i] === "\n" ? "\n" : " ";
+        i++;
+      }
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 /** Raw import specifiers, with line numbers. Regex tier by definition. */
 function extractImports(lang, source) {
+  const js = lang === "typescript" || lang === "javascript";
+  const code = js ? stripComments(source) : source;
   const line = lineIndex(source);
   const out = [];
   const push = (spec, idx) => {
-    if (spec && !insideString(source, idx)) out.push({ spec: spec.trim(), line: line(idx) });
+    if (spec && !insideString(code, idx)) out.push({ spec: spec.trim(), line: line(idx) });
   };
 
-  if (lang === "typescript" || lang === "javascript") {
+  if (js) {
     const re = /(?:from|require\s*\(|import\s*\()\s*["']([^"'\n]+)["']/g;
-    for (const m of source.matchAll(re)) push(m[1], m.index);
+    for (const m of code.matchAll(re)) push(m[1], m.index);
+    // Side-effect form: `import "./x"` - no `from`, no call parens.
+    const bare = /(?:^|[;}])\s*import\s*["']([^"'\n]+)["']/gm;
+    for (const m of code.matchAll(bare)) push(m[1], m.index + m[0].indexOf("import"));
     return out;
   }
   if (lang === "python") {
