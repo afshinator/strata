@@ -276,3 +276,50 @@ test("an explicit --root still indexes the tree it names and leaves the cwd alon
   assert.ok(existsSync(join(other, ".strata/index.json")), "the named tree was indexed");
   assert.ok(!existsSync(join(root, ".strata/index.json")), "the cwd was not touched");
 });
+
+test("blast names a new untracked file instead of reporting no changes", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  writeFileSync(join(root, "src/brandNew.ts"), "export const n = 1;\n");
+  const out = run(root, ["blast"]);
+  assert.match(out, /src\/brandNew\.ts/, "the unindexed file is named");
+  assert.match(out, /strata index/, "and the report says what to do about it");
+  assert.doesNotMatch(out, /no changes/);
+});
+
+test("blast --json parses on a clean tree", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  const json = JSON.parse(run(root, ["blast", "--json"]));
+  assert.deepEqual(json.changed, []);
+  // The data dir shows up here until it is self-ignoring (#3); this asserts the shape, not the pollution.
+  assert.ok(Array.isArray(json.untracked));
+});
+
+test("blast --json parses for an untracked-only change", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  writeFileSync(join(root, "src/brandNew.ts"), "export const n = 1;\n");
+  const json = JSON.parse(run(root, ["blast", "--json"]));
+  assert.deepEqual(json.changed, []);
+  assert.ok(json.untracked.includes("src/brandNew.ts"), "the unindexed path is carried, not dropped");
+});
+
+test("blast --json has one key set whichever path it takes", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  const empty = Object.keys(JSON.parse(run(root, ["blast", "--json"])));
+  writeFileSync(join(root, "src/db.ts"), "export const db = 7;\n");
+  const populated = Object.keys(JSON.parse(run(root, ["blast", "--json"])));
+  assert.deepEqual(empty, populated, "a consumer needs one schema, not two");
+});
+
+test("a mixed change still reports tracked and untracked sections", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  writeFileSync(join(root, "src/db.ts"), "export const db = 8;\n");
+  writeFileSync(join(root, "src/brandNew.ts"), "export const n = 2;\n");
+  const out = run(root, ["blast"]);
+  assert.match(out, /1 changed file/);
+  assert.match(out, /src\/brandNew\.ts/);
+});

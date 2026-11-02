@@ -37,11 +37,6 @@ export function blast(root, args = {}) {
     return false;
   });
 
-  if (!changed.length) {
-    process.stdout.write(`strata blast — no changes in the ${basis}.\n`);
-    return 0;
-  }
-
   const { all: affected, byDepth } = reverseClosure(graph, changed, depth);
   const tests = new Set();
   for (const p of [...changed, ...affected]) {
@@ -78,6 +73,23 @@ export function blast(root, args = {}) {
         2,
       ) + "\n",
     );
+    return 0;
+  }
+
+  // JSON is emitted above for every path, so a consumer never gets prose.
+  // With nothing indexed there is no closure to report, only work to ask for.
+  if (!changed.length) {
+    if (!untracked.length) {
+      process.stdout.write(`strata blast — no changes in the ${basis}.\n`);
+      return 0;
+    }
+    const L = [
+      `strata blast — 0 indexed changes, ${untracked.length} path(s) not in the index (${basis})`,
+      "",
+    ];
+    for (const p of untracked) L.push(`  ${p}`);
+    L.push("", "Run `strata index` to include them.");
+    process.stdout.write(L.join("\n") + "\n");
     return 0;
   }
 
