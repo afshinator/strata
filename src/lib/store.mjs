@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync, openSync, closeSync } from "node:fs";
 import { join } from "node:path";
 
-export const DATA_DIR = ".strata";
+const DATA_DIR = ".strata";
 
 export function paths(root) {
   const dir = join(root, DATA_DIR);
@@ -14,7 +14,7 @@ export function paths(root) {
   };
 }
 
-export function ensureDir(root) {
+function ensureDir(root) {
   mkdirSync(paths(root).dir, { recursive: true });
 }
 
@@ -26,7 +26,7 @@ export function readIndex(root) {
   }
 }
 
-export function writeAtomic(file, content) {
+function writeAtomic(file, content) {
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, content);
   renameSync(tmp, file);

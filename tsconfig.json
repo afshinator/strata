@@ -1,0 +1,17 @@
+{
+  // Type checking only: emits nothing, ships nothing, cannot go stale.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "skipLibCheck": true,
+    // strict is off on purpose: with no JSDoc annotations it reports 136 errors,
+    // 104 of them "implicit any". Turn it on when the modules carry annotations.
+    "strict": false
+  },
+  "include": ["bin/**/*.mjs", "src/**/*.mjs", "test/**/*.mjs"]
+}

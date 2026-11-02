@@ -3,11 +3,27 @@
   "version": "0.1.0",
   "description": "Deterministic codebase index: what depends on what, what breaks when you change it, what the docs get wrong. No dashboard, no hooks, no LLM in the index path.",
   "type": "module",
-  "bin": { "strata": "./bin/strata.mjs" },
-  "engines": { "node": ">=20" },
-  "files": ["bin", "src", "skill"],
-  "scripts": {
-    "test": "node --test"
+  "bin": {
+    "strata": "./bin/strata.mjs"
   },
-  "license": "MIT"
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skill"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "check": "tsc",
+    "dead-code": "fallow dead-code",
+    "health": "fallow health --report-only"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "fallow": "^3.38.1",
+    "typescript": "^5.9.3"
+  }
 }

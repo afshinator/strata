@@ -104,7 +104,7 @@ function insideString(source, idx) {
 }
 
 /** Raw import specifiers, with line numbers. Regex tier by definition. */
-export function extractImports(lang, source) {
+function extractImports(lang, source) {
   const line = lineIndex(source);
   const out = [];
   const push = (spec, idx) => {
