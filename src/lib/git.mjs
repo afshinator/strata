@@ -39,6 +39,9 @@ export function listFiles(root) {
 
 export function dirtyPaths(root) {
   const out = tryGit(root, ["status", "--porcelain", "-z"]) || "";
+  // `git status` has no --relative, so rebase the paths itself: like log and diff
+  // it prints them from the worktree root, while the index stores them from here.
+  const prefix = (tryGit(root, ["rev-parse", "--show-prefix"]) || "").trim();
   const out2 = [];
   const parts = out.split("\0");
   for (let i = 0; i < parts.length; i++) {
@@ -51,13 +54,17 @@ export function dirtyPaths(root) {
       i++;
       p = parts[i] || p;
     }
+    if (prefix) {
+      if (!p.startsWith(prefix)) continue; // changed outside the analysed root
+      p = p.slice(prefix.length);
+    }
     out2.push({ status: xy.trim() || "?", path: p });
   }
   return out2;
 }
 
 export function changedSince(root, rev) {
-  const out = tryGit(root, ["diff", "--name-only", "-z", rev]) || "";
+  const out = tryGit(root, ["diff", "--name-only", "-z", "--relative", rev]) || "";
   return out.split("\0").filter(Boolean);
 }
 
@@ -74,6 +81,9 @@ export function history(root, { days = 90, limit = 4000 } = {}) {
     `-n${limit}`,
     "--pretty=format:\u0001%ae",
     "--name-only",
+    // Without this, `--root <subdir>` gives worktree-relative paths that cannot
+    // join the index, and files outside the subdirectory lend it their history.
+    "--relative",
   ]);
   const churn = new Map();
   const owners = new Map();

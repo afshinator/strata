@@ -38,9 +38,14 @@ const FLAGS = {
   blast: ["root", "since", "depth", "json", "sketch"],
   status: ["root"],
 };
+// Flags that carry a value. A bare `--root` parses as `true`, which would otherwise
+// be handed to git as a directory and reported as "not a git repository".
+const VALUE_FLAGS = { index: ["root"], blast: ["root", "since", "depth"], status: ["root"] };
 const unknown = FLAGS[cmd] ? Object.keys(args).find((k) => k !== "_" && !FLAGS[cmd].includes(k)) : undefined;
-if (unknown) {
-  process.stderr.write(`strata: unknown flag --${unknown}\n\n${USAGE}`);
+const valueless = FLAGS[cmd] ? VALUE_FLAGS[cmd].find((k) => args[k] === true) : undefined;
+const bad = unknown ? `unknown flag --${unknown}` : valueless ? `--${valueless} needs a value` : null;
+if (bad) {
+  process.stderr.write(`strata: ${bad}\n\n${USAGE}`);
   process.exitCode = 2;
 } else {
   // git prints paths relative to the worktree root, so the tool must resolve from there too.
