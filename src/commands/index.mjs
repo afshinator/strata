@@ -4,7 +4,7 @@ import { dirtyPaths, head, isRepo, listFiles, history, topOwners } from "../lib/
 import { scan, mapTests } from "../lib/scan.mjs";
 import { resolveImports, buildWorkspaces, buildTsPaths } from "../lib/imports.mjs";
 import { buildGraph, topoOrder } from "../lib/graph.mjs";
-import { writeIndex, writeText, lock, paths, DATA_DIR } from "../lib/store.mjs";
+import { writeIndex, writeText, lock, paths, DATA_DIR, FORMAT } from "../lib/store.mjs";
 import { IMPORT_LANGS } from "../lib/lang.mjs";
 
 function goModuleOf(root) {
@@ -83,7 +83,7 @@ export function index(root, args = {}) {
     const noExtractor = files.filter((f) => !IMPORT_LANGS.has(f.lang)).length;
 
     const data = {
-      version: 1,
+      version: FORMAT,
       // Reproducible on purpose: no absolute path, no wall-clock timestamp. The briefing
       // carries the generation time instead, so a committed artifact does not churn.
       rootName: basename(root),

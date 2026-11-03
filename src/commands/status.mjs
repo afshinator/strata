@@ -9,7 +9,7 @@ export function status(root) {
   }
   const data = readIndex(root);
   if (!data) {
-    process.stderr.write("strata: no index. Run `strata index` (0 tokens).\n");
+    process.stderr.write("strata: no usable index. Run `strata index` (0 tokens).\n");
     return 2;
   }
   const now = head(root);
