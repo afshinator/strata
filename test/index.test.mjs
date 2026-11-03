@@ -947,3 +947,57 @@ test("a tsconfig that cannot be parsed is one question, not silence", () => {
   assert.equal(data.unresolved[0].file, "tsconfig.json");
   assert.match(data.unresolved[0].reason, /tsconfig/i, "the reason names the file");
 });
+
+test("a --root with no value is rejected, not analysed as a missing repository", () => {
+  const root = fixture();
+  for (const cmd of ["index", "blast", "status"]) {
+    const r = exitOf(root, [cmd, "--root"]);
+    assert.equal(r.code, 2, `${cmd} --root with no value`);
+    assert.match(r.err, /--root/, `${cmd} names the flag it rejects`);
+  }
+  assert.ok(!existsSync(join(root, "true/.strata")), "no data dir invented from a boolean");
+});
+
+test("--root on a subdirectory attributes churn to the files it names", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-subroot-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "app/src"), { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "outer" }));
+  writeFileSync(join(root, "app/package.json"), JSON.stringify({ name: "inner" }));
+  writeFileSync(join(root, "app/src/a.ts"), "export const a = 1;\n");
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "one"]);
+  writeFileSync(join(root, "app/src/a.ts"), "export const a = 2;\n");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "outer", v: 2 }));
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "two"]);
+  run(root, ["index", "--root", "app"]);
+  const data = JSON.parse(readFileSync(join(root, "app/.strata/index.json"), "utf8"));
+  const a = data.files.find((f) => f.path === "src/a.ts");
+  assert.ok(a, "the subdirectory file is indexed under the subdirectory root");
+  assert.equal(a.churn, 2, "both commits that touched it are counted");
+  const inner = data.files.find((f) => f.path === "package.json");
+  assert.equal(inner.churn, 1, "the outer package.json does not lend its history to the inner one");
+});
+
+test("blast --root on a subdirectory analyses the change instead of calling it unindexed", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-subroot-blast-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "app/src"), { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "outer" }));
+  writeFileSync(join(root, "app/package.json"), JSON.stringify({ name: "inner" }));
+  writeFileSync(join(root, "app/src/a.ts"), "export const a = 1;\n");
+  writeFileSync(join(root, "app/src/uses.ts"), 'import { a } from "./a";\nexport const u = a;\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "one"]);
+  run(root, ["index", "--root", "app"]);
+  writeFileSync(join(root, "app/src/a.ts"), "export const a = 2;\n");
+  const out = run(root, ["blast", "--root", "app"]);
+  assert.match(out, /src\/a\.ts/, "the changed file is named relative to the analysed root");
+  assert.match(out, /src\/uses\.ts/, "its importer is in the blast radius");
+  assert.doesNotMatch(out, /not in the index/, "an indexed file is not reported as unindexed");
+});
