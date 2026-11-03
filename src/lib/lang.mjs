@@ -1,3 +1,5 @@
+// What a file is, for counting. Graphable languages are listed separately in
+// IMPORT_LANGS, so a language here and not there is counted and never linked.
 const LANG_BY_EXT = {
   ".ts": "typescript", ".tsx": "typescript", ".mts": "typescript", ".cts": "typescript",
   ".js": "javascript", ".jsx": "javascript", ".mjs": "javascript", ".cjs": "javascript",
@@ -53,6 +55,5 @@ export function testCandidates(path) {
     `${dir}tests/test_${stem}.py`,
     `${dir}test_${stem}.py`,
     `${dir}${stem}_test.go`,
-    `${dir}${stem}_test.rb`,
   ];
 }
