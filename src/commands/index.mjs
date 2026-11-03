@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { dirtyPaths, head, isRepo, listFiles, history, topOwners } from "../lib/git.mjs";
 import { scan, mapTests } from "../lib/scan.mjs";
-import { resolveImports, buildWorkspaces } from "../lib/imports.mjs";
+import { resolveImports, buildWorkspaces, buildTsPaths } from "../lib/imports.mjs";
 import { buildGraph, topoOrder } from "../lib/graph.mjs";
 import { writeIndex, writeText, lock, paths, DATA_DIR } from "../lib/store.mjs";
 import { IMPORT_LANGS } from "../lib/lang.mjs";
@@ -71,7 +71,8 @@ export function index(root, args = {}) {
     const goModule = goModuleOf(root);
 
     const workspaces = buildWorkspaces(root);
-    const { edges, unresolved, external } = resolveImports({ files, fileSet, sources, goModule, workspaces });
+    const tsPaths = buildTsPaths(root);
+    const { edges, unresolved, external } = resolveImports({ files, fileSet, sources, goModule, workspaces, tsPaths });
     const graph = buildGraph(edges, files);
     const { testsFor, mappedTests } = mapTests(files, graph);
     const hist = history(root);
