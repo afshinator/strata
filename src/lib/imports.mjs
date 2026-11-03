@@ -195,7 +195,7 @@ function extractImports(lang, source) {
   }
   if (lang === "python") {
     for (const m of source.matchAll(/^[ \t]*from[ \t]+([\w.]+)[ \t]+import\b/gm)) push(m[1], m.index);
-    for (const m of source.matchAll(/^[ \t]*import[ \t]+([\w., \t]+)$/gm)) {
+    for (const m of source.matchAll(/^[ \t]*import[ \t]+([\w., \t]+)(?:[ \t]*#.*)?$/gm)) {
       for (const part of m[1].split(",")) {
         const spec = part.trim().split(/\s+as\s+/)[0];
         if (spec) push(spec, m.index);
@@ -276,7 +276,7 @@ function resolveGo(fromPath, spec, goModule, fileSet) {
   const target = rel === "" ? "." : rel;
   const hits = [...fileSet].filter((p) => posix.dirname(p) === target && p.endsWith(".go"));
   if (hits.length === 0) return { reason: `package dir '${target}' has no .go files` };
-  return { to: hits.slice(0, 20) };
+  return { to: hits };
 }
 
 function resolveC(fromPath, spec, fileSet) {

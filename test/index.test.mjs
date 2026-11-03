@@ -1025,3 +1025,48 @@ test("blast --json emits JSON when there is no index", () => {
   assert.deepEqual(j.changed, []);
   assert.deepEqual(j.seeds, []);
 });
+
+test("a tracked file above the size limit is listed, and raises one question", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/huge.ts"), "export const big = 1;\n" + "// pad\n".repeat(180000));
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "big"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.ok(data.files.some((f) => f.path === "src/huge.ts"), "it is in the tree, so it is in the index");
+  const q = data.unresolved.filter((u) => u.file === "src/huge.ts");
+  assert.equal(q.length, 1, "one question, not one per import");
+  assert.match(q[0].reason, /MB/, "the reason names the size");
+});
+
+test("a go package import reaches every file in the package", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-go-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  writeFileSync(join(root, "go.mod"), "module example.com/m\n\ngo 1.21\n");
+  mkdirSync(join(root, "pkg"), { recursive: true });
+  for (let i = 1; i <= 26; i++) writeFileSync(join(root, `pkg/f${i}.go`), `package pkg\n\nfunc F${i}() int { return ${i} }\n`);
+  writeFileSync(join(root, "main.go"), 'package main\n\nimport "example.com/m/pkg"\n\nfunc main() { _ = pkg.F1() }\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "go"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.equal(data.edges.filter((e) => e.from === "main.go").length, 26, "every file in the package is a dependency");
+});
+
+test("a python import with a trailing comment is still an import", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-py-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "pkg"), { recursive: true });
+  for (const n of ["alpha", "beta", "gamma", "delta"]) writeFileSync(join(root, `pkg/${n}.py`), "x = 1\n");
+  writeFileSync(join(root, "pkg/main.py"), "import pkg.alpha  # note\nimport pkg.beta, pkg.gamma  # two\nimport pkg.delta as d\n");
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "py"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const specs = data.edges.filter((e) => e.from === "pkg/main.py").map((e) => e.spec).sort();
+  assert.deepEqual(specs, ["pkg.alpha", "pkg.beta", "pkg.delta", "pkg.gamma"]);
+});
