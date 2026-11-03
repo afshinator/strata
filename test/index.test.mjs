@@ -1071,6 +1071,83 @@ test("a python import with a trailing comment is still an import", () => {
   assert.deepEqual(specs, ["pkg.alpha", "pkg.beta", "pkg.delta", "pkg.gamma"]);
 });
 
+test("a rust crate import reaches the module file", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-rs-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "src/a/b"), { recursive: true });
+  writeFileSync(join(root, "Cargo.toml"), '[package]\nname = "x"\nversion = "0.1.0"\nedition = "2021"\n');
+  writeFileSync(join(root, "src/lib.rs"), "pub mod a;\nuse crate::a::b::Thing;\nmod inline { pub fn g() {} }\n");
+  writeFileSync(join(root, "src/a.rs"), "pub mod b;\npub mod c;\n");
+  writeFileSync(join(root, "src/a/b.rs"), "pub struct Thing;\npub mod deep;\nuse super::c::Other;\n");
+  writeFileSync(join(root, "src/a/c.rs"), "pub struct Other;\n");
+  writeFileSync(join(root, "src/a/b/deep.rs"), "pub fn d() {}\n");
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "rs"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const to = (from) => data.edges.filter((e) => e.from === from).map((e) => e.to).sort();
+  assert.deepEqual(to("src/lib.rs"), ["src/a.rs", "src/a/b.rs"], "crate::a::b::Thing names the module file, and the inline mod is not an edge");
+  assert.deepEqual(to("src/a.rs"), ["src/a/b.rs", "src/a/c.rs"]);
+  assert.deepEqual(to("src/a/b.rs"), ["src/a/b/deep.rs", "src/a/c.rs"], "children of a/b.rs live in a/b/, and super::c is a/c.rs");
+});
+
+test("a rust module declared in mod.rs does not double its own directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-rsmod-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "src/m"), { recursive: true });
+  writeFileSync(join(root, "Cargo.toml"), '[package]\nname = "x"\nversion = "0.1.0"\n');
+  writeFileSync(join(root, "src/lib.rs"), "pub mod m;\n");
+  writeFileSync(join(root, "src/m/mod.rs"), "pub mod n;\n");
+  writeFileSync(join(root, "src/m/n.rs"), "pub fn f() {}\n");
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "rsmod"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.deepEqual(data.edges.filter((e) => e.from === "src/m/mod.rs").map((e) => e.to), ["src/m/n.rs"], "rustc reads src/m/n.rs here");
+});
+
+test("a rust external crate is external, a missing module is not", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-rsext-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "Cargo.toml"), '[package]\nname = "x"\nversion = "0.1.0"\n');
+  writeFileSync(join(root, "src/lib.rs"), "use serde::Serialize;\nuse std::collections::HashMap;\nuse util::helper;\nuse crate::nope;\n");
+  writeFileSync(join(root, "src/util.rs"), "pub fn helper() {}\n");
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "rsext"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.deepEqual(data.edges.filter((e) => e.from === "src/lib.rs").map((e) => e.to), ["src/util.rs"], "an unprefixed path that names a local module is an edge, not an external crate");
+  const q = data.unresolved.filter((u) => u.file === "src/lib.rs");
+  assert.equal(q.length, 1, "only crate::nope is unresolved");
+  assert.match(q[0].spec, /nope/);
+});
+
+test("a rust import inside a comment is not an edge", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-rscom-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "Cargo.toml"), '[package]\nname = "x"\nversion = "0.1.0"\n');
+  // A module line inside a block comment starts at column zero, so it looks exactly
+  // like a real import to a line regex. `//` forms cannot match and prove nothing.
+  writeFileSync(join(root, "src/lib.rs"), "/*\nuse crate::ghost;\nmod ghost2;\n*/\n// use crate::ghost;\nfn f<'a>(x: &'a str) -> &'a str { x }\n");
+  writeFileSync(join(root, "src/ghost.rs"), "pub fn g() {}\n");
+  writeFileSync(join(root, "src/ghost2.rs"), "pub fn h() {}\n");
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "rscom"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.deepEqual(data.edges.filter((e) => e.from === "src/lib.rs").map((e) => e.to), [], "neither a commented module nor a lifetime is an import");
+});
+
 test("an emitted extension finds its TypeScript source", () => {
   const root = fixture();
   writeFileSync(join(root, "src/legacy.cts"), "export const y = 1;\n");
