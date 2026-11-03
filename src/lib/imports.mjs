@@ -276,7 +276,7 @@ function resolveGo(fromPath, spec, goModule, fileSet) {
   const target = rel === "" ? "." : rel;
   const hits = [...fileSet].filter((p) => posix.dirname(p) === target && p.endsWith(".go"));
   if (hits.length === 0) return { reason: `package dir '${target}' has no .go files` };
-  return { to: hits.slice(0, 20) };
+  return { to: hits };
 }
 
 function resolveC(fromPath, spec, fileSet) {
