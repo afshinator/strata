@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { dirtyPaths, head, isRepo, listFiles, history, topOwners } from "../lib/git.mjs";
-import { scan, mapTests } from "../lib/scan.mjs";
+import { scan, mapTests, MAX_READ } from "../lib/scan.mjs";
 import { resolveImports, buildWorkspaces, buildTsPaths } from "../lib/imports.mjs";
 import { buildGraph, topoOrder } from "../lib/graph.mjs";
 import { writeIndex, writeText, lock, paths, DATA_DIR, FORMAT } from "../lib/store.mjs";
@@ -66,7 +66,7 @@ export function index(root, args = {}) {
     const dirty = dirtyPaths(root).filter((d) => !inDataDir(d.path)).length;
 
     const allPaths = listFiles(root).filter((p) => !inDataDir(p));
-    const { files, sources } = scan(root, allPaths);
+    const { files, sources, oversized } = scan(root, allPaths);
     const fileSet = new Set(files.map((f) => f.path));
     const goModule = goModuleOf(root);
 
@@ -76,6 +76,15 @@ export function index(root, args = {}) {
     // A config that exists but cannot be read is the one failure no import can report,
     // because the aliases it declared simply vanish. Say it once, at file level.
     if (tsPaths.error) unresolved.push({ file: "tsconfig.json", spec: "every declared path", line: 1, reason: tsPaths.error });
+    // A file too large to read is in the graph but its imports are unknown. Say which.
+    for (const o of oversized) {
+      unresolved.push({
+        file: o.path,
+        spec: "(whole file)",
+        line: 1,
+        reason: `not parsed: ${(o.bytes / 1048576).toFixed(1)} MB is above the ${MAX_READ / 1048576} MB size limit`,
+      });
+    }
     const graph = buildGraph(edges, files);
     const { testsFor, mappedTests } = mapTests(files, graph);
     const hist = history(root);

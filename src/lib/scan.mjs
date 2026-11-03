@@ -2,11 +2,12 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { isBinaryish, langOf, isTest, testCandidates, IMPORT_LANGS } from "./lang.mjs";
 
-const MAX_READ = 1024 * 1024;
+export const MAX_READ = 1024 * 1024;
 
 export function scan(root, paths) {
   const files = [];
   const sources = new Map();
+  const oversized = [];
   for (const path of paths) {
     if (isBinaryish(path)) continue;
     let st;
@@ -15,10 +16,11 @@ export function scan(root, paths) {
     } catch {
       continue;
     }
-    if (!st.isFile() || st.size > MAX_READ) continue;
+    if (!st.isFile()) continue;
     const lang = langOf(path);
+    const tooBig = st.size > MAX_READ;
     let source = null;
-    if (IMPORT_LANGS.has(lang) || lang === "markdown") {
+    if (!tooBig && (IMPORT_LANGS.has(lang) || lang === "markdown")) {
       try {
         source = readFileSync(join(root, path), "utf8");
       } catch {
@@ -28,8 +30,10 @@ export function scan(root, paths) {
     const lines = source === null ? null : source.split("\n").length;
     files.push({ path, lang, bytes: st.size, lines, test: isTest(path) });
     if (source !== null) sources.set(path, source);
+    // A file in the tree is part of the graph even when its contents are not read.
+    if (tooBig) oversized.push({ path, bytes: st.size });
   }
-  return { files, sources };
+  return { files, sources, oversized };
 }
 
 const TEST_DIR = /(^|\/)(tests?|__tests__|specs?)\//i;
