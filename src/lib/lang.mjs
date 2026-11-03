@@ -13,7 +13,7 @@ const LANG_BY_EXT = {
 };
 
 // Languages with an import extractor in src/lib/imports.mjs.
-export const IMPORT_LANGS = new Set(["typescript", "javascript", "python", "go", "rust", "c", "cpp"]);
+export const IMPORT_LANGS = new Set(["typescript", "javascript", "python", "rust"]);
 
 const SKIP_EXT = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svgz", ".pdf", ".zip", ".gz", ".tgz",
@@ -54,6 +54,5 @@ export function testCandidates(path) {
     `${dir}tests/${stem}.test${ext}`,
     `${dir}tests/test_${stem}.py`,
     `${dir}test_${stem}.py`,
-    `${dir}${stem}_test.go`,
   ];
 }

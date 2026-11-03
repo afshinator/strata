@@ -277,14 +277,6 @@ function extractImports(lang, source) {
     }
     return out;
   }
-  if (lang === "go") {
-    for (const block of source.matchAll(/import\s*\(([\s\S]*?)\)/g)) {
-      const base = block.index;
-      for (const m of block[1].matchAll(/"([^"\n]+)"/g)) push(m[1], base + m.index);
-    }
-    for (const m of source.matchAll(/^[ \t]*import[ \t]+(?:\w+[ \t]+)?"([^"\n]+)"/gm)) push(m[1], m.index);
-    return out;
-  }
   if (lang === "rust") {
     code = stripSlashComments(source);
     // `mod x;` is what makes the compiler read a file. `mod x {` does not.
@@ -292,13 +284,6 @@ function extractImports(lang, source) {
     for (const m of code.matchAll(modRe)) push(`self::${m[1]}`, m.index);
     const useRe = /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+([^;]+);/gm;
     for (const m of code.matchAll(useRe)) for (const spec of rustUsePaths(m[1])) push(spec, m.index);
-    return out;
-  }
-  if (lang === "c" || lang === "cpp") {
-    code = stripSlashComments(source);
-    for (const m of code.matchAll(/^[ \t]*#[ \t]*include[ \t]+"([^"\n]+)"/gm)) push(m[1], m.index);
-    // Keep the brackets: they say "system search path", which decides the class.
-    for (const m of code.matchAll(/^[ \t]*#[ \t]*include[ \t]+<([^>\n]+)>/gm)) push(`<${m[1]}>`, m.index);
     return out;
   }
   return out;
@@ -358,14 +343,6 @@ function resolvePython(fromPath, spec, pyIndex, fileSet) {
   return { external: "third-party or stdlib module" };
 }
 
-function resolveGo(fromPath, spec, goModule, fileSet) {
-  if (!goModule || !spec.startsWith(goModule)) return { external: "external package" };
-  const rel = spec.slice(goModule.length).replace(/^\//, "");
-  const target = rel === "" ? "." : rel;
-  const hits = [...fileSet].filter((p) => posix.dirname(p) === target && p.endsWith(".go"));
-  if (hits.length === 0) return { reason: `package dir '${target}' has no .go files` };
-  return { to: hits };
-}
 
 // The directory a file's child modules live in: `a/b.rs` and `a/b/mod.rs` both
 // own `a/b/x.rs`.
@@ -422,16 +399,6 @@ function resolveRust(fromPath, spec, fileSet) {
   return { external: "not in this crate" };
 }
 
-// shortcut: -I and system include dirs are not modelled, so an in-repo header
-// reached only through -I is Unresolved (quoted) or External (angle). Read the
-// compiler's -M output when that starts to matter.
-function resolveC(fromPath, spec, fileSet) {
-  // Angle form names the system search path. Guessing at -I dirs would invent
-  // edges, so it is external even when the repo happens to hold a matching path.
-  if (spec.startsWith("<")) return { external: "system header" };
-  const target = posix.normalize(posix.join(posix.dirname(fromPath), spec));
-  return fileSet.has(target) ? { to: [target] } : { reason: "header not found next to the source (include dirs not modelled)" };
-}
 
 /**
  * Declared module path mappings from the root tsconfig. TypeScript accepts
@@ -529,7 +496,7 @@ function resolveWorkspace(spec, workspaces, fileSet) {
   return { reason: `workspace '${name}' main '${hit.main}' does not resolve` };
 }
 
-export function resolveImports({ files, fileSet, sources, goModule, workspaces = new Map(), tsPaths = null }) {
+export function resolveImports({ files, fileSet, sources, workspaces = new Map(), tsPaths = null }) {
   const edges = [];
   const seen = new Set(); // one edge per (from, to); import sites may repeat
   const unresolved = [];
@@ -564,9 +531,8 @@ export function resolveImports({ files, fileSet, sources, goModule, workspaces =
             resolveWorkspace(spec, workspaces, fileSet);
         }
       } else if (f.lang === "python") res = resolvePython(f.path, spec, pyIndex, fileSet);
-      else if (f.lang === "go") res = resolveGo(f.path, spec, goModule, fileSet);
       else if (f.lang === "rust") res = resolveRust(f.path, spec, fileSet);
-      else res = resolveC(f.path, spec, fileSet);
+      else continue;
 
       if (res.to) {
         for (const to of res.to) {
