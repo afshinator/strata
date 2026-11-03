@@ -2,13 +2,25 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin", "strata.mjs");
 const TSC = join(ROOT, "node_modules", ".bin", "tsc");
+// rustc on PATH, else the cargo default install, which is not on PATH for a plain shell.
+const RUSTC = (() => {
+  for (const cand of [process.env.STRATA_RUSTC || "rustc", join(homedir(), ".cargo", "bin", "rustc")]) {
+    try {
+      execFileSync(cand, ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      return cand;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+})();
 
 const sh = (cwd, cmd, args) => execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"] });
 
@@ -100,4 +112,64 @@ test("strata agrees with the compiler on every specifier in the fixture", { skip
     if (e.spec.startsWith(".") && !asked.has(`${e.from}\0${e.spec}`)) invented.push(`${e.from} -> '${e.spec}'`);
   }
   assert.deepEqual(invented, []);
+});
+
+/** The `.rs` files rustc reads for a crate: its module tree, as the compiler sees it. */
+function rustcModules(dir) {
+  sh(dir, RUSTC, ["--edition", "2021", "--crate-type", "lib", "--emit=dep-info", "-o", "deps.d", "src/lib.rs"]);
+  const text = readFileSync(join(dir, "deps.d"), "utf8").replace(/\\\n/g, " ");
+  return new Set(
+    [...text.matchAll(/[\w./-]+\.rs/g)].map((m) => m[0]).filter((p) => !p.startsWith("/")),
+  );
+}
+
+function rustFixture() {
+  const root = mkdtempSync(join(tmpdir(), "strata-rust-oracle-"));
+  sh(root, "git", ["init", "-b", "main"]);
+  sh(root, "git", ["config", "user.email", "test@example.com"]);
+  sh(root, "git", ["config", "user.name", "test"]);
+  mkdirSync(join(root, "src/a/b"), { recursive: true });
+  mkdirSync(join(root, "src/m"), { recursive: true });
+  mkdirSync(join(root, "src/m/n"), { recursive: true });
+  writeFileSync(join(root, "Cargo.toml"), '[package]\nname = "o"\nversion = "0.1.0"\nedition = "2021"\n');
+  writeFileSync(join(root, "src/lib.rs"), [
+    "pub mod a;",
+    "pub mod m;",
+    "use crate::a::b::{Thing, deep::d};",
+    "use crate::a::c::Other as Alias;",
+    "// mod ghost;",
+    "mod brace { pub fn inline() {} }",
+    "",
+  ].join("\n"));
+  writeFileSync(join(root, "src/a.rs"), "pub mod b;\npub mod c;\n");
+  writeFileSync(join(root, "src/a/b.rs"), "pub struct Thing;\npub mod deep;\nuse super::c::Other;\n");
+  writeFileSync(join(root, "src/a/c.rs"), "pub struct Other;\n");
+  writeFileSync(join(root, "src/a/b/deep.rs"), "pub fn d() {}\n");
+  writeFileSync(join(root, "src/m/mod.rs"), "pub mod n;\n");
+  writeFileSync(join(root, "src/m/n.rs"), "pub fn f() {}\n");
+  // Present but never declared: a real crate has these, and no Edge may point at one.
+  writeFileSync(join(root, "src/brace.rs"), "pub fn stray() {}\n");
+  writeFileSync(join(root, "src/ghost.rs"), "pub fn stray2() {}\n");
+  writeFileSync(join(root, "src/m/n/n.rs"), "pub fn stray3() {}\n");
+  sh(root, "git", ["add", "-A"]);
+  sh(root, "git", ["commit", "-m", "fixture"]);
+  return root;
+}
+
+test("strata links exactly the modules rustc reads", { skip: !RUSTC && "rustc is not installed" }, () => {
+  const root = rustFixture();
+  sh(root, process.execPath, [BIN, "index", "--quiet"]);
+  const index = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const mine = new Set(index.edges.map((e) => e.to));
+  const real = rustcModules(root);
+
+  assert.ok(real.size >= 6, `the oracle saw ${real.size} modules, too few to trust`);
+
+  // An Edge to a file the compiler never opened was invented: a mod inside a comment,
+  // a brace module, or a module guessed from a stray file.
+  assert.deepEqual([...mine].filter((to) => !real.has(to)).sort(), []);
+
+  // Everything the compiler read except the crate root has no incoming Edge.
+  const roots = new Set(["src/lib.rs", "src/main.rs"]);
+  assert.deepEqual([...real].filter((p) => !roots.has(p) && !mine.has(p)).sort(), []);
 });
