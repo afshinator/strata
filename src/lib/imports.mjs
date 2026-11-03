@@ -292,14 +292,14 @@ function resolveC(fromPath, spec, fileSet) {
  * down keeps those imports external. Upgrade when such a repo shows up.
  */
 export function buildTsPaths(root) {
-  const out = { root, patterns: [] };
+  const out = { root, patterns: [], baseUrl: null, error: null };
   let source;
   try {
     source = readFileSync(join(root, "tsconfig.json"), "utf8");
   } catch {
-    return out;
+    return out; /* no config at all: nothing was declared, so nothing is lost */
   }
-  const stripped = stripComments(source);
+  const stripped = stripComments(source).replace(/^\uFEFF/, "");
   let ts = null;
   try {
     ts = JSON.parse(stripped);
@@ -307,11 +307,13 @@ export function buildTsPaths(root) {
     try {
       ts = JSON.parse(stripped.replace(/,(\s*[}\]])/g, "$1"));
     } catch {
-      return out; /* unreadable config: no aliases, as before */
+      out.error = "tsconfig.json could not be parsed, so every declared path alias was ignored";
+      return out;
     }
   }
   const co = ts.compilerOptions || {};
   const base = co.baseUrl ? join(root, co.baseUrl) : root;
+  out.baseUrl = co.baseUrl ? base : null;
   for (const [pattern, targets] of Object.entries(co.paths || {})) {
     const star = pattern.indexOf("*");
     out.patterns.push({
@@ -342,6 +344,19 @@ function resolveTsPath(spec, tsPaths, fileSet) {
     if (hit) return { to: [hit] };
   }
   return { reason: `tsconfig path '${spec}' matches a declared pattern but does not resolve` };
+}
+
+/**
+ * A bare specifier also resolves against `baseUrl`, with or without `paths`.
+ * Silent on a miss: a package that is not in the tree is external, not a
+ * question, so this can never flood QUESTIONS.md the way a `*` pattern would.
+ */
+function resolveBaseUrl(spec, tsPaths, fileSet) {
+  if (!tsPaths.baseUrl) return null;
+  const abs = posix.join(tsPaths.baseUrl, spec);
+  if (!abs.startsWith(tsPaths.root + "/")) return null;
+  const hit = resolveFile(posix.normalize(abs.slice(tsPaths.root.length + 1)), fileSet);
+  return hit ? { to: [hit] } : null;
 }
 
 function resolveWorkspace(spec, workspaces, fileSet) {
@@ -384,7 +399,10 @@ export function resolveImports({ files, fileSet, sources, goModule, workspaces =
         } else if (isNodeBuiltin(spec)) {
           res = { external: "node builtin" };
         } else {
-          res = (tsPaths && resolveTsPath(spec, tsPaths, fileSet)) || resolveWorkspace(spec, workspaces, fileSet);
+          res =
+            (tsPaths && resolveTsPath(spec, tsPaths, fileSet)) ||
+            (tsPaths && resolveBaseUrl(spec, tsPaths, fileSet)) ||
+            resolveWorkspace(spec, workspaces, fileSet);
         }
       } else if (f.lang === "python") res = resolvePython(f.path, spec, pyIndex, fileSet);
       else if (f.lang === "go") res = resolveGo(f.path, spec, goModule, fileSet);
