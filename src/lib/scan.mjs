@@ -38,7 +38,7 @@ export function scan(root, paths) {
 
 const TEST_DIR = /(^|\/)(tests?|__tests__|specs?)\//i;
 
-/** The name a test and its source share: `a.test.ts`, `test_a.py` and `a_test.go` all yield `a`. */
+/** The name a test and its source share: `a.test.ts` and `test_a.py` both yield `a`. */
 function stemOf(path) {
   const base = path.slice(path.lastIndexOf("/") + 1);
   const dot = base.lastIndexOf(".");
@@ -47,7 +47,6 @@ function stemOf(path) {
   const stem = base.slice(0, dot);
   if (/\.(?:[cm]?[jt]sx?)$/i.test(ext)) return stem.replace(/\.(test|spec)$/i, "");
   if (ext === ".py") return stem.replace(/^test_/, "");
-  if (ext === ".go") return stem.replace(/_test$/, "");
   return stem;
 }
 

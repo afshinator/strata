@@ -7,14 +7,6 @@ import { buildGraph, topoOrder } from "../lib/graph.mjs";
 import { writeIndex, writeText, lock, paths, DATA_DIR, FORMAT } from "../lib/store.mjs";
 import { IMPORT_LANGS } from "../lib/lang.mjs";
 
-function goModuleOf(root) {
-  try {
-    const m = readFileSync(join(root, "go.mod"), "utf8").match(/^module\s+(\S+)/m);
-    return m ? m[1] : null;
-  } catch {
-    return null;
-  }
-}
 
 function repoIdentity(root) {
   try {
@@ -68,11 +60,10 @@ export function index(root, args = {}) {
     const allPaths = listFiles(root).filter((p) => !inDataDir(p));
     const { files, sources, oversized } = scan(root, allPaths);
     const fileSet = new Set(files.map((f) => f.path));
-    const goModule = goModuleOf(root);
 
     const workspaces = buildWorkspaces(root);
     const tsPaths = buildTsPaths(root);
-    const { edges, unresolved, external } = resolveImports({ files, fileSet, sources, goModule, workspaces, tsPaths });
+    const { edges, unresolved, external } = resolveImports({ files, fileSet, sources, workspaces, tsPaths });
     // A config that exists but cannot be read is the one failure no import can report,
     // because the aliases it declared simply vanish. Say it once, at file level.
     if (tsPaths.error) unresolved.push({ file: "tsconfig.json", spec: "every declared path", line: 1, reason: tsPaths.error });

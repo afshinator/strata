@@ -28,7 +28,7 @@ strata status     # 0 tokens, staleness
 ## Status
 
 Phase 1, `regex` tier. Working: `index`, `blast`, `status`, `MAP.md`, `QUESTIONS.md`, lock, atomic writes.
-Import resolution: relative JS/TS (incl. `.js`→`.ts`), workspace packages from `package.json` `workspaces` and `pnpm-workspace.yaml` (entry file, subpaths, `dist/`→`src/` fallback), path aliases from the root `tsconfig.json` (`baseUrl` + `paths`, wildcards, longest match first), Python relative + module lookup, Go module-relative packages, C/C++ local headers. `node:` builtins and specifiers that match no declared pattern are counted as *external*, not as failures. Imports written inside string literals or comments are ignored, so fixture code and commented-out imports do not become edges.
+Import resolution: relative JS/TS (incl. `.js`→`.ts`), workspace packages from `package.json` `workspaces` and `pnpm-workspace.yaml` (entry file, subpaths, `dist/`→`src/` fallback), path aliases from the root `tsconfig.json` (`baseUrl` + `paths`, wildcards, longest match first), Python relative + module lookup, Rust modules. `node:` builtins and specifiers that match no declared pattern are counted as *external*, not as failures. Imports written inside string literals or comments are ignored, so fixture code and commented-out imports do not become edges.
 
 Known regex-tier misses: dynamic `require(variable)`, alias mechanisms other than the root `tsconfig.json` (`extends` chains, nested configs, webpack and babel resolution, `$lib`), template literals spanning lines. A specifier that matches a declared `paths` pattern but finds no file is unresolved, never external.
 
