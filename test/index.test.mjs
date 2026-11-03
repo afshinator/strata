@@ -867,3 +867,43 @@ test("blast refuses an index written in another format without failing the build
   assert.match(r.out, /strata index/, "and it names the remedy");
   assert.doesNotMatch(r.out, /no changes in the working tree/, "rather than reporting from a shape it cannot read");
 });
+
+test("an apostrophe in JSX text does not turn the comment after it into code", () => {
+  const root = fixture();
+  writeFileSync(
+    join(root, "src/ghost.tsx"),
+    'export function C() {\n  return (\n    <p>Don\'t panic</p>\n  );\n}\n// import { db } from "./db"\nimport { invoice } from "./billing/invoice";\nexport const x = [C, invoice];\n',
+  );
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "jsx apostrophe"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.equal(data.edges.filter((e) => e.from === "src/ghost.tsx" && e.to === "src/db.ts").length, 0, "the commented import is not an edge");
+  assert.equal(data.edges.filter((e) => e.from === "src/ghost.tsx" && e.to === "src/billing/invoice.ts").length, 1, "the real import after it is still an edge");
+});
+
+test("a quote inside a regex literal does not turn the comment after it into code", () => {
+  const root = fixture();
+  writeFileSync(
+    join(root, "src/sep.ts"),
+    'export const sep = /[\'"]/;\n// import { db } from "./db"\nimport { invoice } from "./billing/invoice";\nexport const x = sep.source + invoice;\n',
+  );
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "regex quote"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.equal(data.edges.filter((e) => e.from === "src/sep.ts" && e.to === "src/db.ts").length, 0, "the commented import is not an edge");
+  assert.equal(data.edges.filter((e) => e.from === "src/sep.ts" && e.to === "src/billing/invoice.ts").length, 1, "the real import after it is still an edge");
+  assert.equal(data.unresolved.filter((u) => u.file === "src/sep.ts").length, 0, "no question invented");
+});
+
+test("a single-quoted URL does not swallow the import after it", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/sq_url.ts"), 'const u = \'https://example.com/a\';\nimport { db } from "./db";\nexport const x = u + db;\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "single-quoted url"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const hits = data.edges.filter((e) => e.from === "src/sq_url.ts" && e.to === "src/db.ts");
+  assert.equal(hits.length, 1, "the import after the string is still an edge");
+});

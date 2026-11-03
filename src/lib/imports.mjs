@@ -104,10 +104,24 @@ function insideString(source, idx) {
 }
 
 /**
+ * True when a ' or " at `i` has a matching delimiter later on the same line.
+ * A quoted string cannot contain a raw newline, so a quote with no closer on its
+ * line is text: JSX prose (`Don't`) or a regex literal (`/['"]/`). Treating it as
+ * a string would swallow the rest of the file and un-blank every comment in it.
+ */
+function closesOnThisLine(source, i, q) {
+  let j = i + 1;
+  while (j < source.length && source[j] !== q && source[j] !== "\n") j += source[j] === "\\" ? 2 : 1;
+  return source[j] === q;
+}
+
+/**
  * Blank out JS/TS comments while keeping byte offsets and newlines, so line numbers
  * and the string-literal guard stay valid. String-aware: `"https://x"` is not a
  * comment, and a commented-out import is not source.
- * shortcut: a `//` inside a template-literal ${} is treated as a comment.
+ * shortcut: a `//` inside a template-literal ${} is treated as a comment, a
+ * backslash line-continuation inside a string is not followed, and a lone quote
+ * on a line that holds real code (`case'x'`) reads as text.
  */
 function stripComments(source) {
   let out = "";
@@ -125,6 +139,13 @@ function stripComments(source) {
       out += c;
       i++;
       continue;
+    }
+    if (c === '"' || c === "'") {
+      if (!closesOnThisLine(source, i, c)) {
+        out += c;
+        i++;
+        continue;
+      }
     }
     if (c === '"' || c === "'" || c === "`") {
       quote = c;
