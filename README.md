@@ -18,7 +18,7 @@ strata status     # 0 tokens, staleness
 
 ## Design rules
 
-1. **Index costs nothing.** Every command in the index path is deterministic and offline.
+1. **Index costs nothing.** The artifact is deterministic and offline: the same tree produces the same bytes. The two briefings are regenerated from it, and `MAP.md` records when it ran.
 2. **No build step.** Plain ESM, Node ≥ 20, zero runtime dependencies. Nothing is compiled and nothing compiled is shipped, so nothing can go stale (UA's #704 is a stale `dist/` turning every refresh into a full rebuild). Development tooling lives in `devDependencies` and is exempt from this rule: it emits no artifact, so it cannot go stale, and a consumer never installs it.
 3. **Every edge carries a tier.** `compiler` > `tree-sitter` > `regex`. Today everything is `regex`; the report says so instead of implying precision it does not have.
 4. **Unresolved is a result, not a failure.** Anything that does not resolve *inside the repository* lands in `QUESTIONS.md` with a reason. A specifier that points outside it is counted as external instead. Never an invented edge.

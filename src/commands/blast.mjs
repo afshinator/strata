@@ -27,7 +27,31 @@ export function blast(root, args = {}) {
   const data = readIndex(root);
   if (!data) {
     // A report, not a gate: missing index is a notice, so it never fails a build.
-    process.stdout.write("strata: no usable index — run `strata index` (it costs nothing).\n");
+    const notice = "no usable index — run `strata index` (it costs nothing).";
+    if (args.json) {
+      // Same schema as a real report, with empty lists: a consumer parses one shape.
+      process.stdout.write(
+        JSON.stringify(
+          {
+            error: notice,
+            basis: null,
+            head: null,
+            tier: null,
+            currentHead: head(root),
+            changed: [],
+            affected: { direct: [], all: [] },
+            tests: [],
+            owners: [],
+            seeds: [],
+            untracked: [],
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    } else {
+      process.stdout.write(`strata: ${notice}\n`);
+    }
     return 0;
   }
   const graph = buildGraph(data.edges, data.files);
@@ -71,6 +95,7 @@ export function blast(root, args = {}) {
     process.stdout.write(
       JSON.stringify(
         {
+          error: null,
           basis,
           head: data.head,
           tier: data.tier,
