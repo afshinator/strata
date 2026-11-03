@@ -195,7 +195,7 @@ function extractImports(lang, source) {
   }
   if (lang === "python") {
     for (const m of source.matchAll(/^[ \t]*from[ \t]+([\w.]+)[ \t]+import\b/gm)) push(m[1], m.index);
-    for (const m of source.matchAll(/^[ \t]*import[ \t]+([\w., \t]+)$/gm)) {
+    for (const m of source.matchAll(/^[ \t]*import[ \t]+([\w., \t]+)(?:[ \t]*#.*)?$/gm)) {
       for (const part of m[1].split(",")) {
         const spec = part.trim().split(/\s+as\s+/)[0];
         if (spec) push(spec, m.index);
