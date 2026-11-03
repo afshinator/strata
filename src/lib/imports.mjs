@@ -224,6 +224,8 @@ function resolveFile(base, fileSet) {
   // TS emits .js specifiers that point at .ts sources.
   if (base.endsWith(".js")) bases.push(base.slice(0, -3) + ".ts", base.slice(0, -3) + ".tsx");
   if (base.endsWith(".mjs")) bases.push(base.slice(0, -4) + ".mts");
+  if (base.endsWith(".cjs")) bases.push(base.slice(0, -4) + ".cts");
+  if (base.endsWith(".jsx")) bases.push(base.slice(0, -4) + ".tsx");
 
   for (const b of bases) {
     if (fileSet.has(b)) return b;
