@@ -6,7 +6,7 @@ Deterministic codebase index. See `README.md`.
 
 ### Issue tracker
 
-Issues and specs live as GitHub issues in `afshinator/strata`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues and specs live as GitHub issues in `afshinator/strata`, managed with the `gh` CLI. Read `docs/agents/issue-tracker.md` before any `gh` write — create, edit, close, label — because the flag names are not guessable and a wrong one can empty a body.
 
 ### Triage labels
 
