@@ -1138,14 +1138,51 @@ test("a rust import inside a comment is not an edge", () => {
   writeFileSync(join(root, "Cargo.toml"), '[package]\nname = "x"\nversion = "0.1.0"\n');
   // A module line inside a block comment starts at column zero, so it looks exactly
   // like a real import to a line regex. `//` forms cannot match and prove nothing.
-  writeFileSync(join(root, "src/lib.rs"), "/*\nuse crate::ghost;\nmod ghost2;\n*/\n// use crate::ghost;\nfn f<'a>(x: &'a str) -> &'a str { x }\n");
+  writeFileSync(join(root, "src/lib.rs"), "/*\nuse crate::ghost;\nmod ghost2;\n*/\n// use crate::ghost;\nmod live;\nfn f<'a>(x: &'a str) -> &'a str { x }\n");
   writeFileSync(join(root, "src/ghost.rs"), "pub fn g() {}\n");
   writeFileSync(join(root, "src/ghost2.rs"), "pub fn h() {}\n");
+  writeFileSync(join(root, "src/live.rs"), "pub fn l() {}\n");
   sh(root, ["add", "-A"]);
   sh(root, ["commit", "-m", "rscom"]);
   run(root, ["index"]);
   const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
-  assert.deepEqual(data.edges.filter((e) => e.from === "src/lib.rs").map((e) => e.to), [], "neither a commented module nor a lifetime is an import");
+  // The live module after the comments proves the match offsets and the text that
+  // `insideString` inspects belong to the same string.
+  assert.deepEqual(data.edges.filter((e) => e.from === "src/lib.rs").map((e) => e.to), ["src/live.rs"], "the commented modules are not imports, and a real module after them still is");
+});
+
+test("a C include is an edge, a system header is external, and a comment is neither", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-c-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "src/local.h"), "int local(void);\n");
+  // Present on disk but never included by live code: a regex must not pair them.
+  writeFileSync(join(root, "src/ghost.h"), "int g(void);\n");
+  writeFileSync(join(root, "src/ghost2.h"), "int g2(void);\n");
+  writeFileSync(join(root, "src/main.c"), [
+    '#include "local.h"',
+    "#include <sys/types.h>",
+    "#include <stdio.h>",
+    '#include "missing.h"',
+    "/*",
+    '#include "ghost.h"',
+    "*/",
+    "// #include \"ghost2.h\"",
+    "int main(void) { return 0; }",
+    "",
+  ].join("\n"));
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "c"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const to = data.edges.filter((e) => e.from === "src/main.c").map((e) => e.to).sort();
+  assert.deepEqual(to, ["src/local.h"], "a quoted header next to the source is an edge; an angle header and a commented include are not");
+  const q = data.unresolved.filter((u) => u.file === "src/main.c");
+  assert.equal(q.length, 1, "only the missing quoted header is a question");
+  assert.match(q[0].spec, /missing\.h/);
+  assert.deepEqual(Object.keys(data.stats.external || {}), ["system header"], "a system header is external, not a silent drop");
 });
 
 test("an emitted extension finds its TypeScript source", () => {
