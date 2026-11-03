@@ -1070,3 +1070,18 @@ test("a python import with a trailing comment is still an import", () => {
   const specs = data.edges.filter((e) => e.from === "pkg/main.py").map((e) => e.spec).sort();
   assert.deepEqual(specs, ["pkg.alpha", "pkg.beta", "pkg.delta", "pkg.gamma"]);
 });
+
+test("an emitted extension finds its TypeScript source", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/legacy.cts"), "export const y = 1;\n");
+  writeFileSync(join(root, "src/view.tsx"), "export const z = 1;\n");
+  writeFileSync(join(root, "src/stream.mts"), "export const w = 1;\n");
+  writeFileSync(join(root, "src/emitted.ts"), 'import { y } from "./legacy.cjs";\nimport { z } from "./view.jsx";\nimport { w } from "./stream.mjs";\nexport const a = [y, z, w];\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "emitted extensions"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const got = data.edges.filter((e) => e.from === "src/emitted.ts").map((e) => `${e.spec} -> ${e.to}`).sort();
+  assert.deepEqual(got, ["./legacy.cjs -> src/legacy.cts", "./stream.mjs -> src/stream.mts", "./view.jsx -> src/view.tsx"]);
+  assert.equal(data.unresolved.filter((u) => u.file === "src/emitted.ts").length, 0, "nothing left unresolved");
+});
