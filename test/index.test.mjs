@@ -313,6 +313,8 @@ test("blast --json has one key set whichever path it takes", () => {
   writeFileSync(join(root, "src/db.ts"), "export const db = 7;\n");
   const populated = Object.keys(JSON.parse(run(root, ["blast", "--json"])));
   assert.deepEqual(empty, populated, "a consumer needs one schema, not two");
+  const noIndex = Object.keys(JSON.parse(exitOf(fixture(), ["blast", "--json"]).out));
+  assert.deepEqual(empty, noIndex, "the no-index path keeps the same schema");
 });
 
 test("a mixed change still reports tracked and untracked sections", () => {
@@ -1000,4 +1002,26 @@ test("blast --root on a subdirectory analyses the change instead of calling it u
   assert.match(out, /src\/a\.ts/, "the changed file is named relative to the analysed root");
   assert.match(out, /src\/uses\.ts/, "its importer is in the blast radius");
   assert.doesNotMatch(out, /not in the index/, "an indexed file is not reported as unindexed");
+});
+
+test("a relative specifier that escapes the analysed root is external, not a question", () => {
+  const root = fixture();
+  writeFileSync(join(root, "src/escape.ts"), 'import { o } from "../../outside/o";\nexport const x = o;\n');
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "escaping relative"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.equal(data.unresolved.filter((u) => u.file === "src/escape.ts").length, 0, "not a question: the tool cannot see outside");
+  const labels = Object.keys(data.stats.external);
+  assert.ok(labels.some((k) => /not in this repo/.test(k)), `labelled as outside the repo, got ${JSON.stringify(labels)}`);
+});
+
+test("blast --json emits JSON when there is no index", () => {
+  const root = fixture();
+  const r = exitOf(root, ["blast", "--json"]);
+  assert.equal(r.code, 0, "a missing index is a notice, not a failure");
+  const j = JSON.parse(r.out);
+  assert.match(j.error, /index/, "the payload says what is missing");
+  assert.deepEqual(j.changed, []);
+  assert.deepEqual(j.seeds, []);
 });

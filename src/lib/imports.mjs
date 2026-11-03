@@ -395,7 +395,17 @@ export function resolveImports({ files, fileSet, sources, goModule, workspaces =
       if (f.lang === "typescript" || f.lang === "javascript") {
         if (spec.startsWith(".") || spec.startsWith("/")) {
           const hit = tryJsCandidates(f.path, spec, fileSet);
-          res = hit ? { to: [hit] } : { reason: "relative path does not resolve" };
+          if (hit) res = { to: [hit] };
+          else {
+            // A relative path that normalises above the root names a file this run
+            // cannot see, so it is external rather than a broken in-repo import.
+            const target = spec.startsWith("/")
+              ? spec
+              : posix.normalize(posix.join(posix.dirname(f.path), spec));
+            res = target === ".." || target.startsWith("../") || target.startsWith("/")
+              ? { external: "not in this repo: outside the analysed root" }
+              : { reason: "relative path does not resolve" };
+          }
         } else if (isNodeBuiltin(spec)) {
           res = { external: "node builtin" };
         } else {

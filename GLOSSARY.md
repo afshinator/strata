@@ -41,7 +41,7 @@ _Avoid_: dependencies, out-degree
 ### The artifacts
 
 **Data dir**:
-`.strata/`, holding the index, the map, the questions file, and the lock. Always at the analysed repository's top level.
+`.strata/`, holding the index, the map, the questions file, and the lock. Always at the analysed root: the repository top level, or the directory `--root` names.
 _Avoid_: cache, output dir, .strata folder
 
 **Index**:
