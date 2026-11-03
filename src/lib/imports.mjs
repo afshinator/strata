@@ -175,10 +175,10 @@ function stripComments(source) {
   return out;
 }
 
-// Rust comments, with strings copied through so `insideString` still works on the
-// result. Does not track char literals or raw strings: a lone `'` on a `use` or
-// `mod` line cannot occur in valid Rust outside a char literal.
-function stripRustComments(source) {
+// Rust, C and C++ comments, with strings copied through so `insideString` still
+// works on the result. Does not track Rust char literals or raw strings: a lone
+// `'` on a `use` or `mod` line cannot occur in valid Rust outside a char literal.
+function stripSlashComments(source) {
   let out = "";
   let block = 0;
   let i = 0;
@@ -186,8 +186,8 @@ function stripRustComments(source) {
     const c = source[i];
     const n = source[i + 1];
     if (block > 0) {
-      if (c === "/" && n === "*") { block++; i += 2; continue; }
-      if (c === "*" && n === "/") { block--; i += 2; continue; }
+      if (c === "/" && n === "*") { block++; out += "  "; i += 2; continue; }
+      if (c === "*" && n === "/") { block--; out += "  "; i += 2; continue; }
       out += c === "\n" ? "\n" : " ";
       i++;
       continue;
@@ -196,7 +196,7 @@ function stripRustComments(source) {
       while (i < source.length && source[i] !== "\n") { out += " "; i++; }
       continue;
     }
-    if (c === "/" && n === "*") { block++; i += 2; continue; }
+    if (c === "/" && n === "*") { block++; out += "  "; i += 2; continue; }
     if (c === '"') {
       out += c;
       i++;
@@ -249,7 +249,10 @@ function rustUsePaths(text) {
 /** Raw import specifiers, with line numbers. Regex tier by definition. */
 function extractImports(lang, source) {
   const js = lang === "typescript" || lang === "javascript";
-  const code = js ? stripComments(source) : source;
+  // `push` reads `code` to skip matches inside strings, so a branch that strips
+  // comments must assign here; a local `const code` would leave it on raw source
+  // while the match indices come from the stripped text.
+  let code = js ? stripComments(source) : source;
   const line = lineIndex(source);
   const out = [];
   const push = (spec, idx) => {
@@ -283,7 +286,7 @@ function extractImports(lang, source) {
     return out;
   }
   if (lang === "rust") {
-    const code = stripRustComments(source);
+    code = stripSlashComments(source);
     // `mod x;` is what makes the compiler read a file. `mod x {` does not.
     const modRe = /^[ \t]*(?:#\s*\[[^\]]*\][ \t]*)*(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+([A-Za-z_]\w*)[ \t]*;/gm;
     for (const m of code.matchAll(modRe)) push(`self::${m[1]}`, m.index);
@@ -292,7 +295,10 @@ function extractImports(lang, source) {
     return out;
   }
   if (lang === "c" || lang === "cpp") {
-    for (const m of source.matchAll(/^[ \t]*#[ \t]*include[ \t]+"([^"\n]+)"/gm)) push(m[1], m.index);
+    code = stripSlashComments(source);
+    for (const m of code.matchAll(/^[ \t]*#[ \t]*include[ \t]+"([^"\n]+)"/gm)) push(m[1], m.index);
+    // Keep the brackets: they say "system search path", which decides the class.
+    for (const m of code.matchAll(/^[ \t]*#[ \t]*include[ \t]+<([^>\n]+)>/gm)) push(`<${m[1]}>`, m.index);
     return out;
   }
   return out;
@@ -416,7 +422,13 @@ function resolveRust(fromPath, spec, fileSet) {
   return { external: "not in this crate" };
 }
 
+// shortcut: -I and system include dirs are not modelled, so an in-repo header
+// reached only through -I is Unresolved (quoted) or External (angle). Read the
+// compiler's -M output when that starts to matter.
 function resolveC(fromPath, spec, fileSet) {
+  // Angle form names the system search path. Guessing at -I dirs would invent
+  // edges, so it is external even when the repo happens to hold a matching path.
+  if (spec.startsWith("<")) return { external: "system header" };
   const target = posix.normalize(posix.join(posix.dirname(fromPath), spec));
   return fileSet.has(target) ? { to: [target] } : { reason: "header not found next to the source (include dirs not modelled)" };
 }
