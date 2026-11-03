@@ -175,6 +175,77 @@ function stripComments(source) {
   return out;
 }
 
+// Rust comments, with strings copied through so `insideString` still works on the
+// result. Does not track char literals or raw strings: a lone `'` on a `use` or
+// `mod` line cannot occur in valid Rust outside a char literal.
+function stripRustComments(source) {
+  let out = "";
+  let block = 0;
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i];
+    const n = source[i + 1];
+    if (block > 0) {
+      if (c === "/" && n === "*") { block++; i += 2; continue; }
+      if (c === "*" && n === "/") { block--; i += 2; continue; }
+      out += c === "\n" ? "\n" : " ";
+      i++;
+      continue;
+    }
+    if (c === "/" && n === "/") {
+      while (i < source.length && source[i] !== "\n") { out += " "; i++; }
+      continue;
+    }
+    if (c === "/" && n === "*") { block++; i += 2; continue; }
+    if (c === '"') {
+      out += c;
+      i++;
+      while (i < source.length) {
+        out += source[i];
+        if (source[i] === "\\") { out += source[i + 1] || ""; i += 2; continue; }
+        if (source[i++] === '"') break;
+      }
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+// `use a::{b, c::d};` -> ["a::b", "a::c::d"]; `::{self, x}` -> the parent and x.
+function rustUsePaths(text) {
+  const out = [];
+  const walk = (body, prefix) => {
+    let depth = 0;
+    let cur = "";
+    const items = [];
+    for (const ch of body) {
+      if (ch === "{") depth++;
+      else if (ch === "}") depth--;
+      else if (ch === "," && depth === 0) { items.push(cur); cur = ""; continue; }
+      cur += ch;
+    }
+    items.push(cur);
+    for (const raw of items) {
+      const item = raw.trim().replace(/\s+as\s+[A-Za-z_]\w*$/, "");
+      if (!item) continue;
+      const brace = item.indexOf("{");
+      if (brace >= 0) {
+        const head = item.slice(0, brace).replace(/::$/, "").trim();
+        const inner = item.slice(brace + 1).replace(/}\s*$/, "");
+        walk(inner, head ? (prefix ? `${prefix}::${head}` : head) : prefix);
+        continue;
+      }
+      if (item === "self") { if (prefix) out.push(prefix); continue; }
+      const seg = item.replace(/::\*$/, "").replace(/^::/, "");
+      if (seg) out.push(prefix ? `${prefix}::${seg}` : seg);
+    }
+  };
+  walk(text.replace(/\s+/g, " "), "");
+  return out;
+}
+
 /** Raw import specifiers, with line numbers. Regex tier by definition. */
 function extractImports(lang, source) {
   const js = lang === "typescript" || lang === "javascript";
@@ -209,6 +280,15 @@ function extractImports(lang, source) {
       for (const m of block[1].matchAll(/"([^"\n]+)"/g)) push(m[1], base + m.index);
     }
     for (const m of source.matchAll(/^[ \t]*import[ \t]+(?:\w+[ \t]+)?"([^"\n]+)"/gm)) push(m[1], m.index);
+    return out;
+  }
+  if (lang === "rust") {
+    const code = stripRustComments(source);
+    // `mod x;` is what makes the compiler read a file. `mod x {` does not.
+    const modRe = /^[ \t]*(?:#\s*\[[^\]]*\][ \t]*)*(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+([A-Za-z_]\w*)[ \t]*;/gm;
+    for (const m of code.matchAll(modRe)) push(`self::${m[1]}`, m.index);
+    const useRe = /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+([^;]+);/gm;
+    for (const m of code.matchAll(useRe)) for (const spec of rustUsePaths(m[1])) push(spec, m.index);
     return out;
   }
   if (lang === "c" || lang === "cpp") {
@@ -279,6 +359,61 @@ function resolveGo(fromPath, spec, goModule, fileSet) {
   const hits = [...fileSet].filter((p) => posix.dirname(p) === target && p.endsWith(".go"));
   if (hits.length === 0) return { reason: `package dir '${target}' has no .go files` };
   return { to: hits };
+}
+
+// The directory a file's child modules live in: `a/b.rs` and `a/b/mod.rs` both
+// own `a/b/x.rs`.
+function rustModuleDir(fromPath) {
+  const dir = posix.dirname(fromPath);
+  const base = posix.basename(fromPath);
+  if (base === "mod.rs" || base === "lib.rs" || base === "main.rs") return dir;
+  return posix.join(dir, base.replace(/\.rs$/, ""));
+}
+
+// The `src/` of the nearest enclosing crate root.
+function rustCrateSrc(fromPath, fileSet) {
+  let dir = posix.dirname(fromPath);
+  for (;;) {
+    if (fileSet.has(posix.join(dir, "Cargo.toml"))) return posix.join(dir, "src");
+    if (dir === "." || dir === "") return "src";
+    dir = posix.dirname(dir);
+  }
+}
+
+// `use crate::a::b::Thing` names an item, so shorten until a module file matches.
+function rustFileAt(base, segs, fileSet) {
+  for (let k = segs.length; k >= 1; k--) {
+    const p = posix.join(base, segs.slice(0, k).join("/"));
+    if (fileSet.has(`${p}.rs`)) return `${p}.rs`;
+    if (fileSet.has(`${p}/mod.rs`)) return `${p}/mod.rs`;
+  }
+  return null;
+}
+
+function resolveRust(fromPath, spec, fileSet) {
+  const segs = spec.split("::").filter(Boolean);
+  const first = segs[0];
+  if (!first) return { reason: "empty rust path" };
+  if (first === "std" || first === "core" || first === "alloc" || first === "proc_macro" || first === "test") {
+    return { external: "rust standard library" };
+  }
+  let base;
+  let inRepo = true;
+  if (first === "crate") { segs.shift(); base = rustCrateSrc(fromPath, fileSet); }
+  else if (first === "super") {
+    base = rustModuleDir(fromPath);
+    do { base = posix.dirname(base); segs.shift(); } while (segs[0] === "super");
+  } else if (first === "self") { segs.shift(); base = rustModuleDir(fromPath); }
+  else {
+    // An unprefixed first segment is a crate-root module if one exists, otherwise
+    // an external crate. The compiler resolves both from the same syntax.
+    base = rustCrateSrc(fromPath, fileSet);
+    inRepo = false;
+  }
+  const hit = rustFileAt(base, segs, fileSet);
+  if (hit) return { to: [hit] };
+  if (inRepo) return { reason: "rust module does not resolve" };
+  return { external: "not in this crate" };
 }
 
 function resolveC(fromPath, spec, fileSet) {
@@ -418,6 +553,7 @@ export function resolveImports({ files, fileSet, sources, goModule, workspaces =
         }
       } else if (f.lang === "python") res = resolvePython(f.path, spec, pyIndex, fileSet);
       else if (f.lang === "go") res = resolveGo(f.path, spec, goModule, fileSet);
+      else if (f.lang === "rust") res = resolveRust(f.path, spec, fileSet);
       else res = resolveC(f.path, spec, fileSet);
 
       if (res.to) {
