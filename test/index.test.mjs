@@ -907,3 +907,43 @@ test("a single-quoted URL does not swallow the import after it", () => {
   const hits = data.edges.filter((e) => e.from === "src/sq_url.ts" && e.to === "src/db.ts");
   assert.equal(hits.length, 1, "the import after the string is still an edge");
 });
+
+test("a tsconfig with a byte-order mark still resolves its aliases", () => {
+  const data = aliasRepo({
+    tsconfig: '\uFEFF{"compilerOptions":{"paths":{"@/*":["./src/*"]}}}',
+    app: 'import { db } from "@/db";\nexport const app = db;\n',
+  });
+  const e = data.edges.find((x) => x.from === "src/app.ts" && x.spec === "@/db");
+  assert.ok(e, "the alias resolved despite the BOM");
+  assert.equal(e.to, "src/db.ts");
+  assert.equal(Object.keys(data.stats.external).some((k) => /unmodelled alias/.test(k)), false, "not counted as a third-party package");
+});
+
+test("baseUrl alone resolves a bare specifier, as the compiler does", () => {
+  const data = aliasRepo({
+    tsconfig: { compilerOptions: { baseUrl: "./src" } },
+    app: 'import { deep } from "lib/deep";\nexport const app = deep;\n',
+  });
+  const e = data.edges.find((x) => x.from === "src/app.ts" && x.spec === "lib/deep");
+  assert.ok(e, "resolved against baseUrl with no paths declared");
+  assert.equal(e.to, "src/lib/deep.ts");
+});
+
+test("a baseUrl that matches no file leaves a package external, not a question", () => {
+  const data = aliasRepo({
+    tsconfig: { compilerOptions: { baseUrl: "./src" } },
+    app: 'import x from "lodash/fp";\nexport const app = x;\n',
+  });
+  assert.equal(data.unresolved.length, 0, "a third-party package is not a question");
+  assert.ok(Object.keys(data.stats.external).length > 0, "still counted as external");
+});
+
+test("a tsconfig that cannot be parsed is one question, not silence", () => {
+  const data = aliasRepo({
+    tsconfig: '{"compilerOptions":{"paths":{"@/*":["./src/*"]}}}\n}}}} trailing garbage',
+    app: 'import { db } from "@/db";\nexport const app = db;\n',
+  });
+  assert.equal(data.unresolved.length, 1, "exactly one entry, not one per import");
+  assert.equal(data.unresolved[0].file, "tsconfig.json");
+  assert.match(data.unresolved[0].reason, /tsconfig/i, "the reason names the file");
+});

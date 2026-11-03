@@ -73,6 +73,9 @@ export function index(root, args = {}) {
     const workspaces = buildWorkspaces(root);
     const tsPaths = buildTsPaths(root);
     const { edges, unresolved, external } = resolveImports({ files, fileSet, sources, goModule, workspaces, tsPaths });
+    // A config that exists but cannot be read is the one failure no import can report,
+    // because the aliases it declared simply vanish. Say it once, at file level.
+    if (tsPaths.error) unresolved.push({ file: "tsconfig.json", spec: "every declared path", line: 1, reason: tsPaths.error });
     const graph = buildGraph(edges, files);
     const { testsFor, mappedTests } = mapTests(files, graph);
     const hist = history(root);
