@@ -70,7 +70,7 @@ Exit codes: `0` ok, `2` usage or refused.
 | Command | Exits `2` when |
 |---|---|
 | `index` | not a git repository, another run holds the lock, an unknown flag |
-| `status` | not a git repository, no index, an unknown flag |
+| `status` | not a git repository, no usable index, an unknown flag |
 | `blast` | an unknown flag, an unknown revision, or a `--depth` that is not a positive integer |
 
 A missing index is a notice and exits `0` for `blast`: it is a report, so it never fails a build. A malformed invocation still fails, because a typo must not be mistaken for an empty result.

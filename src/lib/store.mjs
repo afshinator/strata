@@ -23,9 +23,14 @@ function ensureDir(root) {
   if (!existsSync(ignore)) writeFileSync(ignore, "*\n");
 }
 
+// The artifact shape. Written by index, required by every reader: an index
+// from a different format is not a partial answer, it is an unusable one.
+export const FORMAT = 1;
+
 export function readIndex(root) {
   try {
-    return JSON.parse(readFileSync(paths(root).index, "utf8"));
+    const data = JSON.parse(readFileSync(paths(root).index, "utf8"));
+    return data?.version === FORMAT ? data : null;
   } catch {
     return null;
   }

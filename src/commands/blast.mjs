@@ -27,7 +27,7 @@ export function blast(root, args = {}) {
   const data = readIndex(root);
   if (!data) {
     // A report, not a gate: missing index is a notice, so it never fails a build.
-    process.stdout.write("strata: no index — run `strata index` (it costs nothing).\n");
+    process.stdout.write("strata: no usable index — run `strata index` (it costs nothing).\n");
     return 0;
   }
   const graph = buildGraph(data.edges, data.files);

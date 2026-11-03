@@ -841,3 +841,29 @@ test("a tsconfig with comments and a trailing comma is still read", () => {
   assert.ok(e, "JSONC is not silently ignored");
   assert.equal(e.to, "src/db.ts");
 });
+
+function rewriteVersion(root, version) {
+  const file = join(root, ".strata/index.json");
+  const data = JSON.parse(readFileSync(file, "utf8"));
+  data.version = version;
+  writeFileSync(file, JSON.stringify(data));
+}
+
+test("status refuses an index written in another format", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  rewriteVersion(root, 2);
+  const r = exitOf(root, ["status"]);
+  assert.equal(r.code, 2, "an unreadable artifact is a refusal, not a report");
+  assert.match(r.err, /Run `strata index`/);
+});
+
+test("blast refuses an index written in another format without failing the build", () => {
+  const root = fixture();
+  run(root, ["index"]);
+  rewriteVersion(root, 2);
+  const r = exitOf(root, ["blast"]);
+  assert.equal(r.code, 0, "still a report, not a gate");
+  assert.match(r.out, /strata index/, "and it names the remedy");
+  assert.doesNotMatch(r.out, /no changes in the working tree/, "rather than reporting from a shape it cannot read");
+});
