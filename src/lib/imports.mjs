@@ -263,6 +263,66 @@ function resolveC(fromPath, spec, fileSet) {
   return fileSet.has(target) ? { to: [target] } : { reason: "header not found next to the source (include dirs not modelled)" };
 }
 
+/**
+ * Declared module path mappings from the root tsconfig. TypeScript accepts
+ * comments and trailing commas there, so neither can be fed to JSON.parse raw.
+ * shortcut: only the root tsconfig is read - `extends` chains, nested configs
+ * and `${configDir}` are not followed, so a monorepo that declares paths lower
+ * down keeps those imports external. Upgrade when such a repo shows up.
+ */
+export function buildTsPaths(root) {
+  const out = { root, patterns: [] };
+  let source;
+  try {
+    source = readFileSync(join(root, "tsconfig.json"), "utf8");
+  } catch {
+    return out;
+  }
+  const stripped = stripComments(source);
+  let ts = null;
+  try {
+    ts = JSON.parse(stripped);
+  } catch {
+    try {
+      ts = JSON.parse(stripped.replace(/,(\s*[}\]])/g, "$1"));
+    } catch {
+      return out; /* unreadable config: no aliases, as before */
+    }
+  }
+  const co = ts.compilerOptions || {};
+  const base = co.baseUrl ? join(root, co.baseUrl) : root;
+  for (const [pattern, targets] of Object.entries(co.paths || {})) {
+    const star = pattern.indexOf("*");
+    out.patterns.push({
+      prefix: star === -1 ? pattern : pattern.slice(0, star),
+      suffix: star === -1 ? "" : pattern.slice(star + 1),
+      wildcard: star !== -1,
+      targets: (Array.isArray(targets) ? targets : [targets]).map((t) => join(base, t)),
+    });
+  }
+  return out;
+}
+
+/** Longest matching prefix wins, so `@/data/*` beats `@/*`. */
+function resolveTsPath(spec, tsPaths, fileSet) {
+  let best = null;
+  for (const p of tsPaths.patterns) {
+    if (!spec.startsWith(p.prefix) || !spec.endsWith(p.suffix)) continue;
+    if (spec.length < p.prefix.length + p.suffix.length) continue;
+    if (!best || p.prefix.length > best.prefix.length) best = p;
+  }
+  if (!best) return null;
+  const captured = spec.slice(best.prefix.length, spec.length - best.suffix.length);
+  for (const target of best.targets) {
+    const abs = best.wildcard ? target.replace("*", captured) : target;
+    // A target outside the repo is not ours to resolve.
+    if (!abs.startsWith(tsPaths.root + "/")) continue;
+    const hit = resolveFile(posix.normalize(abs.slice(tsPaths.root.length + 1)), fileSet);
+    if (hit) return { to: [hit] };
+  }
+  return { reason: `tsconfig path '${spec}' matches a declared pattern but does not resolve` };
+}
+
 function resolveWorkspace(spec, workspaces, fileSet) {
   const parts = spec.split("/");
   const name = spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
@@ -284,7 +344,7 @@ function resolveWorkspace(spec, workspaces, fileSet) {
   return { reason: `workspace '${name}' main '${hit.main}' does not resolve` };
 }
 
-export function resolveImports({ files, fileSet, sources, goModule, workspaces = new Map() }) {
+export function resolveImports({ files, fileSet, sources, goModule, workspaces = new Map(), tsPaths = null }) {
   const edges = [];
   const seen = new Set(); // one edge per (from, to); import sites may repeat
   const unresolved = [];
@@ -303,7 +363,7 @@ export function resolveImports({ files, fileSet, sources, goModule, workspaces =
         } else if (isNodeBuiltin(spec)) {
           res = { external: "node builtin" };
         } else {
-          res = resolveWorkspace(spec, workspaces, fileSet);
+          res = (tsPaths && resolveTsPath(spec, tsPaths, fileSet)) || resolveWorkspace(spec, workspaces, fileSet);
         }
       } else if (f.lang === "python") res = resolvePython(f.path, spec, pyIndex, fileSet);
       else if (f.lang === "go") res = resolveGo(f.path, spec, goModule, fileSet);

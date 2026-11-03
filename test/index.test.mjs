@@ -734,3 +734,110 @@ test("a declared entry point that is not in the index is not listed", () => {
   const section = entryFixture("./bin/missing.mjs", "./lib/also-missing.mjs", false);
   assert.equal(section.trim(), "", "no dangling entry points");
 });
+
+function aliasRepo({ tsconfig, app }) {
+  const root = mkdtempSync(join(tmpdir(), "strata-alias-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "src/lib"), { recursive: true });
+  mkdirSync(join(root, "data"), { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "alias" }));
+  writeFileSync(join(root, "src/db.ts"), "export const db = 1;\n");
+  writeFileSync(join(root, "src/lib/deep.ts"), "export const deep = 1;\n");
+  writeFileSync(join(root, "data/rows.ts"), "export const rows = 1;\n");
+  if (tsconfig !== null) writeFileSync(join(root, "tsconfig.json"), typeof tsconfig === "string" ? tsconfig : JSON.stringify(tsconfig));
+  writeFileSync(join(root, "src/app.ts"), app);
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "base"]);
+  run(root, ["index"]);
+  return JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+}
+
+test("a tsconfig path alias resolves to the file it names", () => {
+  const data = aliasRepo({
+    tsconfig: { compilerOptions: { paths: { "@/*": ["./src/*"] } } },
+    app: 'import { db } from "@/db";\nexport const app = db;\n',
+  });
+  const e = data.edges.find((x) => x.from === "src/app.ts" && x.spec === "@/db");
+  assert.ok(e, "the alias became an edge instead of an external package");
+  assert.equal(e.to, "src/db.ts");
+  assert.equal(e.line, 1);
+});
+
+test("the longest matching path pattern wins", () => {
+  const data = aliasRepo({
+    tsconfig: { compilerOptions: { paths: { "@/*": ["./src/*"], "@/data/*": ["./data/*"] } } },
+    app: 'import { rows } from "@/data/rows";\nexport const app = rows;\n',
+  });
+  const e = data.edges.find((x) => x.from === "src/app.ts" && x.spec === "@/data/rows");
+  assert.ok(e, "the more specific pattern matched");
+  assert.equal(e.to, "data/rows.ts", "not src/data/rows.ts");
+});
+
+test("baseUrl is honoured when one is declared", () => {
+  const data = aliasRepo({
+    tsconfig: { compilerOptions: { baseUrl: "./src", paths: { "@/*": ["*"] } } },
+    app: 'import { deep } from "@/lib/deep";\nexport const app = deep;\n',
+  });
+  const e = data.edges.find((x) => x.from === "src/app.ts" && x.spec === "@/lib/deep");
+  assert.ok(e, "targets resolve against baseUrl, not the repo root");
+  assert.equal(e.to, "src/lib/deep.ts");
+});
+
+test("a .js specifier behind an alias still finds its .ts source", () => {
+  const data = aliasRepo({
+    tsconfig: { compilerOptions: { paths: { "@/*": ["./src/*"] } } },
+    app: 'import { db } from "@/db.js";\nexport const app = db;\n',
+  });
+  const e = data.edges.find((x) => x.from === "src/app.ts" && x.spec === "@/db.js");
+  assert.ok(e, "the .js to .ts candidate rule still applies");
+  assert.equal(e.to, "src/db.ts");
+});
+
+test("a pattern that matches but finds no file is a question, never an external package", () => {
+  const data = aliasRepo({
+    tsconfig: { compilerOptions: { paths: { "@/*": ["./src/*"] } } },
+    app: 'import x from "@/nope";\nexport const app = x;\n',
+  });
+  const q = data.unresolved.filter((u) => u.file === "src/app.ts" && u.spec === "@/nope");
+  assert.equal(q.length, 1, "reported as a question");
+  assert.match(q[0].reason, /tsconfig/, "the reason names the cause");
+  assert.equal(data.edges.length, 0, "no invented edge");
+  const aliasAsExternal = Object.keys(data.stats.external).some((k) => /unmodelled alias/.test(k));
+  assert.equal(aliasAsExternal, false, "not swept into external");
+});
+
+test("a specifier matching no pattern keeps behaving as an external package", () => {
+  const data = aliasRepo({
+    tsconfig: { compilerOptions: { paths: { "@/*": ["./src/*"] } } },
+    app: 'import x from "lodash/fp";\nexport const app = x;\n',
+  });
+  assert.equal(data.unresolved.length, 0, "a real package is not a question");
+  assert.ok(Object.keys(data.stats.external).length > 0, "still counted as external");
+});
+
+test("a tsconfig without paths changes nothing", () => {
+  const withTs = aliasRepo({
+    tsconfig: { compilerOptions: { strict: true } },
+    app: 'import { db } from "./db";\nexport const app = db;\n',
+  });
+  const withoutTs = aliasRepo({
+    tsconfig: null,
+    app: 'import { db } from "./db";\nexport const app = db;\n',
+  });
+  assert.deepEqual(withTs.edges, withoutTs.edges, "identical graph");
+});
+
+test("a tsconfig with comments and a trailing comma is still read", () => {
+  const data = aliasRepo({
+    tsconfig: `{
+  // the compiler accepts this form, so the tool must too
+  "compilerOptions": { "paths": { "@/*": ["./src/*"], }, },
+}`,
+    app: 'import { db } from "@/db";\nexport const app = db;\n',
+  });
+  const e = data.edges.find((x) => x.from === "src/app.ts" && x.spec === "@/db");
+  assert.ok(e, "JSONC is not silently ignored");
+  assert.equal(e.to, "src/db.ts");
+});
