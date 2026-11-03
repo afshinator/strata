@@ -14,4 +14,4 @@ Five canonical triage roles, label string equal to role name: `needs-triage`, `n
 
 ### Domain docs
 
-Single-context: `GLOSSARY.md` at the repo root, `docs/adr/` for decisions. `GLOSSARY.md` exists and is the source of truth for domain vocabulary; `docs/adr/` has no entries yet. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` at the repo root, `docs/adr/` for decisions. `GLOSSARY.md` exists and is the source of truth for domain vocabulary; read the ADRs that touch the area you are about to work in before changing it. See `docs/agents/domain.md`.

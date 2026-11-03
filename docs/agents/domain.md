@@ -19,7 +19,7 @@ This repo is **single-context**:
 ├── GLOSSARY.md
 ├── docs/
 │   ├── agents/      ← issue tracker, triage labels, these consumer rules
-│   └── adr/         ← empty; created on the first decision worth recording
+│   └── adr/         ← decisions that are hard to reverse and surprising
 └── src/
 ```
 
