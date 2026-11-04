@@ -397,7 +397,16 @@ function resolvePython(fromPath, spec, pyIndex, fileSet) {
     let dir = posix.dirname(fromPath);
     for (let i = 1; i < dots; i++) dir = posix.dirname(dir);
     const base = posix.normalize(posix.join(dir, rest));
-    for (const cand of [base + ".py", posix.join(base, "__init__.py")]) if (fileSet.has(cand)) return { to: [cand] };
+    const at = (p) => [`${p}.py`, posix.join(p, "__init__.py")].find((c) => fileSet.has(c));
+    const hit = at(base);
+    if (hit) return { to: [hit] };
+    // One step up only: `from .models import User` names pkg/models.py, and
+    // `from . import helper` names the package. Walking further would link the
+    // package for a module that does not exist, hiding a broken import.
+    if (base.length > dir.length) {
+      const parent = at(posix.dirname(base));
+      if (parent) return { to: [parent] };
+    }
     return { reason: `relative import '${spec}' resolved to nothing` };
   }
   const hits = pythonLookup(spec, pyIndex);

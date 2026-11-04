@@ -216,15 +216,21 @@ test("strata extracts exactly the imports ast sees", { skip: !PYTHON && "python3
   sh(root, "git", ["config", "user.email", "test@example.com"]);
   sh(root, "git", ["config", "user.name", "test"]);
   mkdirSync(join(root, "pkg"), { recursive: true });
-  for (const n of ["alpha", "beta", "gamma", "delta"]) writeFileSync(join(root, `pkg/${n}.py`), "x = 1\n");
+  for (const n of ["alpha", "beta", "gamma", "delta", "theta"]) writeFileSync(join(root, `pkg/${n}.py`), "x = 1\n");
   writeFileSync(join(root, "pkg/__init__.py"), "helper = 1\n");
+  writeFileSync(join(root, "pkg/models.py"), "class Value:\n    pass\n");
+  // Each module is imported once: strata keeps one edge per (from, to), so two
+  // specifiers naming the same file would collapse and the set comparison would
+  // report a specifier that was correctly extracted but deduped away.
   writeFileSync(join(root, "pkg/main.py"), [
     "import pkg.alpha",
     "import pkg.beta as b",
-    "from pkg import gamma",
+    "from pkg import theta",
+    "from . import helper",
+    "from .models import Value",
     "from pkg import (",
-    "    alpha,",
-    "    helper,",
+    "    gamma,",
+    "    delta,",
     ")",
     "# import pkg.delta",
     's = "import pkg.delta"',
