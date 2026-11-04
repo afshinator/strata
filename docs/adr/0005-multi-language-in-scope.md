@@ -1,5 +1,8 @@
 # Multiple languages are in scope; Rust is next
 
+Superseded by ADR-0006: Go and C/C++ are out of scope. Kept as written, because
+reversing a decision is worth recording, not erasing.
+
 The project is a JS/TS tool, but the scaffold commit (`4e85863`) shipped
 extractors for Python, Go and C/C++ in the same breath, and `README.md:31`
 advertises them. They work: a four-file Python package produces four edges, a
