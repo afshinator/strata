@@ -2,6 +2,9 @@
 node_modules/
 docs/handoff/
 
+# local: absolute paths and the state of repos edited outside this one
+.reference-baseline.json
+
 # multi-agent task dir: the config is tracked, everything a run writes is not
 mypi-tasks/*
 !mypi-tasks/.gitkeep
