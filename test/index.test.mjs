@@ -1085,6 +1085,36 @@ test("a python import inside a docstring is not an import", () => {
   );
 });
 
+test("a relative python import resolves the module, not the name", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-pyrel-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "pkg/sub"), { recursive: true });
+  writeFileSync(join(root, "pkg/__init__.py"), "helper = 1\n");
+  writeFileSync(join(root, "pkg/models.py"), "class User:\n    pass\n");
+  writeFileSync(join(root, "pkg/alpha.py"), "x = 1\n");
+  writeFileSync(join(root, "pkg/sub/thing.py"), "class Thing:\n    pass\n");
+  writeFileSync(join(root, "pkg/service.py"), [
+    "from . import alpha",
+    "from .models import User",
+    "from . import helper",
+    "from .missing import nothing",
+    "",
+  ].join("\n"));
+  writeFileSync(join(root, "pkg/sub/mod.py"), "from .thing import Thing\n");
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "pyrel"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  const to = (f) => data.edges.filter((e) => e.from === f).map((e) => e.to).sort();
+  assert.deepEqual(to("pkg/service.py"), ["pkg/__init__.py", "pkg/alpha.py", "pkg/models.py"], "the imported name is an attribute, so the module or package is the dependency");
+  assert.deepEqual(to("pkg/sub/mod.py"), ["pkg/sub/thing.py"], "a subpackage resolves against its own directory");
+  const q = data.unresolved.filter((u) => u.file === "pkg/service.py");
+  assert.equal(q.length, 1, "only the truly missing module is a question");
+  assert.match(q[0].spec, /missing/);
+});
+
 test("a python from-import names the module it imports", () => {
   const root = mkdtempSync(join(tmpdir(), "strata-pyfrom-"));
   sh(root, ["init", "-b", "main"]);
