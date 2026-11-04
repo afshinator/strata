@@ -1056,6 +1056,63 @@ test("a python import with a trailing comment is still an import", () => {
   assert.deepEqual(specs, ["pkg.alpha", "pkg.beta", "pkg.delta", "pkg.gamma"]);
 });
 
+test("a python import inside a docstring is not an import", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-pystr-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "pkg"), { recursive: true });
+  for (const n of ["alpha", "delta", "epsilon"]) writeFileSync(join(root, `pkg/${n}.py`), "x = 1\n");
+  writeFileSync(join(root, "pkg/main.py"), [
+    "import pkg.alpha",
+    's = "import pkg.epsilon"',
+    'd = """',
+    "import pkg.delta",
+    '"""',
+    'e = \'\'\'',
+    "import pkg.delta",
+    "\'\'\'",
+    "",
+  ].join("\n"));
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "pystr"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.deepEqual(
+    data.edges.filter((e) => e.from === "pkg/main.py").map((e) => e.spec).sort(),
+    ["pkg.alpha"],
+    "only the live import is an edge; a docstring and a one-line string are text",
+  );
+});
+
+test("a python from-import names the module it imports", () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-pyfrom-"));
+  sh(root, ["init", "-b", "main"]);
+  sh(root, ["config", "user.email", "test@example.com"]);
+  sh(root, ["config", "user.name", "test"]);
+  mkdirSync(join(root, "pkg"), { recursive: true });
+  for (const n of ["alpha", "beta", "gamma"]) writeFileSync(join(root, `pkg/${n}.py`), "x = 1\n");
+  writeFileSync(join(root, "pkg/__init__.py"), "helper = 1\n");
+  writeFileSync(join(root, "main.py"), [
+    "from pkg import alpha",
+    "from pkg import (",
+    "    beta,",
+    "    gamma,",
+    ")",
+    "from pkg import helper",
+    "",
+  ].join("\n"));
+  sh(root, ["add", "-A"]);
+  sh(root, ["commit", "-m", "pyfrom"]);
+  run(root, ["index"]);
+  const data = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  assert.deepEqual(
+    data.edges.filter((e) => e.from === "main.py").map((e) => e.to).sort(),
+    ["pkg/__init__.py", "pkg/alpha.py", "pkg/beta.py", "pkg/gamma.py"],
+    "each imported name is a dependency, and an attribute falls back to the package",
+  );
+});
+
 test("a rust crate import reaches the module file", () => {
   const root = mkdtempSync(join(tmpdir(), "strata-rs-"));
   sh(root, ["init", "-b", "main"]);

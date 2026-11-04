@@ -213,6 +213,50 @@ function stripSlashComments(source) {
   return out;
 }
 
+// Python comments and string literals, length-preserving so match offsets stay
+// valid for `push`. Triple quotes are why `insideString` cannot see this alone:
+// it inspects only the current line, and a docstring line holds no quote.
+function stripPythonComments(source) {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i];
+    if (c === "#") {
+      while (i < source.length && source[i] !== "\n") {
+        out += " ";
+        i++;
+      }
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      const triple = source[i + 1] === c && source[i + 2] === c;
+      const q = triple ? c.repeat(3) : c;
+      out += " ".repeat(q.length);
+      i += q.length;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          const room = Math.min(2, source.length - i);
+          out += " ".repeat(room);
+          i += room;
+          continue;
+        }
+        if (source.startsWith(q, i)) {
+          out += " ".repeat(q.length);
+          i += q.length;
+          break;
+        }
+        if (!triple && source[i] === "\n") break; // unterminated: leave the newline
+        out += source[i] === "\n" ? "\n" : " ";
+        i++;
+      }
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 // `use a::{b, c::d};` -> ["a::b", "a::c::d"]; `::{self, x}` -> the parent and x.
 function rustUsePaths(text) {
   const out = [];
@@ -268,8 +312,20 @@ function extractImports(lang, source) {
     return out;
   }
   if (lang === "python") {
-    for (const m of source.matchAll(/^[ \t]*from[ \t]+([\w.]+)[ \t]+import\b/gm)) push(m[1], m.index);
-    for (const m of source.matchAll(/^[ \t]*import[ \t]+([\w., \t]+)(?:[ \t]*#.*)?$/gm)) {
+    code = stripPythonComments(source);
+    // `from pkg import alpha` imports pkg.alpha: the name after `import` is the
+    // dependency, and a parenthesised list may span lines.
+    const fromRe = /^[ \t]*from[ \t]+([.\w]+)[ \t]+import[ \t]+(\([^)]*\)|[^\n;]+)/gm;
+    for (const m of code.matchAll(fromRe)) {
+      const mod = m[1];
+      for (const raw of m[2].replace(/[()]/g, " ").split(",")) {
+        const name = raw.trim().split(/\s+as\s+/)[0].trim();
+        if (!name) continue;
+        if (name === "*") push(mod, m.index);
+        else if (/^[A-Za-z_]\w*$/.test(name)) push(mod.endsWith(".") ? `${mod}${name}` : `${mod}.${name}`, m.index);
+      }
+    }
+    for (const m of code.matchAll(/^[ \t]*import[ \t]+([\w., \t]+)[ \t]*$/gm)) {
       for (const part of m[1].split(",")) {
         const spec = part.trim().split(/\s+as\s+/)[0];
         if (spec) push(spec, m.index);
@@ -323,6 +379,17 @@ function makePythonIndex(fileSet) {
   return index;
 }
 
+// Exact module id first, then a suffix match: `signals.db` must find
+// `telegram-forwarder/signals/db.py`.
+function pythonLookup(spec, pyIndex) {
+  const exact = pyIndex.get(spec);
+  if (exact) return exact;
+  for (const [id, files] of pyIndex) {
+    if (id.endsWith("." + spec)) return files;
+  }
+  return null;
+}
+
 function resolvePython(fromPath, spec, pyIndex, fileSet) {
   const dots = spec.match(/^\.+/)?.[0].length ?? 0;
   if (dots > 0) {
@@ -333,12 +400,17 @@ function resolvePython(fromPath, spec, pyIndex, fileSet) {
     for (const cand of [base + ".py", posix.join(base, "__init__.py")]) if (fileSet.has(cand)) return { to: [cand] };
     return { reason: `relative import '${spec}' resolved to nothing` };
   }
-  const hits = pyIndex.get(spec);
+  const hits = pythonLookup(spec, pyIndex);
   if (hits && hits.length === 1) return { to: [hits[0]] };
   if (hits && hits.length > 1) return { reason: `ambiguous: '${spec}' matches ${hits.length} files` };
-  // `from a.b import c` where c is a module.
-  for (const [id, files] of pyIndex) {
-    if (id.endsWith("." + spec) && files.length === 1) return { to: [files[0]] };
+  // `from pkg import helper` where helper is an attribute, not a module: the
+  // dependency is pkg. shortcut: a plain `import pkg.missing` lands here too;
+  // narrow it to the from-form when a repo in the Index has such an import.
+  const dot = spec.lastIndexOf(".");
+  if (dot > 0) {
+    const parent = pythonLookup(spec.slice(0, dot), pyIndex);
+    if (parent && parent.length === 1) return { to: [parent[0]] };
+    if (parent && parent.length > 1) return { reason: `ambiguous: '${spec.slice(0, dot)}' matches ${parent.length} files` };
   }
   return { external: "third-party or stdlib module" };
 }
