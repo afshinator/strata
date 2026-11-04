@@ -173,3 +173,80 @@ test("strata links exactly the modules rustc reads", { skip: !RUSTC && "rustc is
   const roots = new Set(["src/lib.rs", "src/main.rs"]);
   assert.deepEqual([...real].filter((p) => !roots.has(p) && !mine.has(p)).sort(), []);
 });
+
+const PYTHON = (() => {
+  for (const cand of [process.env.STRATA_PYTHON || "python3", "/usr/bin/python3"]) {
+    try {
+      execFileSync(cand, ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      return cand;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+})();
+
+/**
+ * Every import `ast` can see in one file, as the specifier strata should produce.
+ * The parser is the oracle: a docstring or a lost `from x import y` shows up as a
+ * disagreement, which a regex cannot check against itself.
+ */
+function astSpecifiers(file) {
+  const script = [
+    "import ast, json, sys",
+    "tree = ast.parse(open(sys.argv[1]).read())",
+    "out = []",
+    "for n in ast.walk(tree):",
+    "    if isinstance(n, ast.Import):",
+    "        out += [a.name for a in n.names]",
+    "    elif isinstance(n, ast.ImportFrom):",
+    '        base = "." * (n.level or 0) + (n.module or "")',
+    "        for a in n.names:",
+    '            out.append(base if a.name == "*" else (base + a.name if base.endswith(".") else base + "." + a.name))',
+    "print(json.dumps(out))",
+  ].join("\n");
+  return JSON.parse(sh(dirnameOf(file), PYTHON, ["-c", script, file]));
+}
+
+const dirnameOf = (f) => f.slice(0, f.lastIndexOf("/")) || ".";
+
+test("strata extracts exactly the imports ast sees", { skip: !PYTHON && "python3 is not installed" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "strata-py-oracle-"));
+  sh(root, "git", ["init", "-b", "main"]);
+  sh(root, "git", ["config", "user.email", "test@example.com"]);
+  sh(root, "git", ["config", "user.name", "test"]);
+  mkdirSync(join(root, "pkg"), { recursive: true });
+  for (const n of ["alpha", "beta", "gamma", "delta"]) writeFileSync(join(root, `pkg/${n}.py`), "x = 1\n");
+  writeFileSync(join(root, "pkg/__init__.py"), "helper = 1\n");
+  writeFileSync(join(root, "pkg/main.py"), [
+    "import pkg.alpha",
+    "import pkg.beta as b",
+    "from pkg import gamma",
+    "from pkg import (",
+    "    alpha,",
+    "    helper,",
+    ")",
+    "# import pkg.delta",
+    's = "import pkg.delta"',
+    'd = """',
+    "import pkg.delta",
+    '"""',
+    "",
+  ].join("\n"));
+  sh(root, "git", ["add", "-A"]);
+  sh(root, "git", ["commit", "-m", "fixture"]);
+  sh(root, process.execPath, [BIN, "index", "--quiet"]);
+
+  const index = JSON.parse(readFileSync(join(root, ".strata/index.json"), "utf8"));
+  // One edge per (from, to): importing the same module twice is still one edge.
+  const mine = [
+    ...new Set([
+      ...index.edges.filter((e) => e.from === "pkg/main.py").map((e) => e.spec),
+      ...index.unresolved.filter((u) => u.file === "pkg/main.py").map((u) => u.spec),
+    ]),
+  ].sort();
+  const seen = astSpecifiers(join(root, "pkg/main.py"));
+  const real = [...new Set(seen)].sort();
+  assert.ok(seen.length >= 5, `ast saw ${seen.length} imports, too few to trust`);
+  assert.deepEqual(mine, real);
+});
