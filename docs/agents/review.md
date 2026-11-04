@@ -1,7 +1,5 @@
 # Review
 
-Three failure modes this repo has produced, and what catches each.
-
 ## A test must be able to fail
 
 Green means nothing until the test has been seen red. Break the implementation on
