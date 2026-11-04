@@ -18,7 +18,8 @@
     "test": "node --test",
     "check": "tsc",
     "dead-code": "fallow dead-code",
-    "health": "fallow health --report-only"
+    "health": "fallow health --report-only",
+    "reference": "node scripts/reference-index.mjs"
   },
   "license": "MIT",
   "devDependencies": {
