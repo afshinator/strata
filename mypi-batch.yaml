@@ -1,10 +1,14 @@
+# Batch policy — read by `mypi-batch prepare`, never written by it.
+# The code-fix template ships with the driver, so the relative path resolves there (#287).
 version: 1
+
 prepare:
   kinds: [code-fix]
   kind_templates:
-    code-fix: /Users/afshin/Documents/dev/multi-agent/templates/batch-code-fix.yaml
+    code-fix: templates/batch-code-fix.yaml
   triage_model: commandcode/deepseek/deepseek-v4-pro
   verifier_model: commandcode/gpt-6-luna
   agent_timeout_minutes: 30
+
 run:
   timeout_minutes: 30
