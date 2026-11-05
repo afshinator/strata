@@ -3,9 +3,15 @@
 version: 1
 
 prepare:
-  kinds: [code-fix]
+  # Mirror of the driver's kind catalog (multi-agent/mypi-batch.yaml). Triage answers
+  # KIND from this list and the value is validated against it, so a kind missing here
+  # cannot be chosen at all.
+  kinds: [code-fix, code-small, writer, writer-solo]
   kind_templates:
     code-fix: templates/batch-code-fix.yaml
+    code-small: templates/code-small.yaml
+    writer: templates/writer.yaml
+    writer-solo: templates/writer-solo.yaml
   triage_model: commandcode/deepseek/deepseek-v4-pro
   verifier_model: commandcode/gpt-6-luna
   agent_timeout_minutes: 30
