@@ -13,3 +13,12 @@ fi
 npm run --silent check
 npm run --silent dead-code
 npm test --silent
+
+# Only this repo's tests run in CI. The reference check indexes repos that live
+# outside it, so a fresh clone has no baseline and skips: record one with
+#   node scripts/reference-index.mjs --write <repo>…
+if [ -f .reference-baseline.json ]; then
+  npm run --silent reference
+else
+  echo "strata pre-push: no reference baseline, skipping the real-repo check" >&2
+fi
