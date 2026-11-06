@@ -37,7 +37,13 @@ function sleepsBeforeChecks(command) {
 function newestSessionLog() {
   const root = join(homedir(), ".pi", "agent", "sessions");
   let best = null;
-  for (const dir of readdirSync(root)) {
+  let dirs;
+  try {
+    dirs = readdirSync(root);
+  } catch {
+    throw new Error(`no *.jsonl under ${root}`);
+  }
+  for (const dir of dirs) {
     let names;
     try {
       names = readdirSync(join(root, dir));
@@ -147,7 +153,12 @@ function format(path) {
 
 // Reached only as a program, so importing this file from a test runs nothing.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const path = process.argv[2] ?? newestSessionLog();
-  process.stderr.write(`session-stats: ${path}\n`);
-  process.stdout.write(format(path));
+  try {
+    const path = process.argv[2] ?? newestSessionLog();
+    process.stderr.write(`session-stats: ${path}\n`);
+    process.stdout.write(format(path));
+  } catch (error) {
+    process.stderr.write(`session-stats: ${error.message}\n`);
+    process.exitCode = 1;
+  }
 }
