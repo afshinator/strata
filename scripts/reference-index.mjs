@@ -2,8 +2,13 @@
 // Reference-repo regression check. The test suite only sees fixtures, so a change
 // that breaks a real repository passes it: two did, and both were found by hand.
 //
-//   node scripts/reference-index.mjs --write ../finance-hub ../vidz   record
-//   node scripts/reference-index.mjs                                  compare
+//   node scripts/reference-index.mjs --write ../finance-hub   record
+//   node scripts/reference-index.mjs                          compare
+//
+// One repo is enough. finance-hub carries the only Python edges in reach, which is
+// the language whose regression this check was built after; a second TypeScript-only
+// repo would add churn, not coverage, and indexing this repo measures the product
+// with the product.
 //
 // The baseline is local and gitignored: it holds absolute paths and the state of
 // repos edited outside this one. `head` and `dirty` are printed every run so an
