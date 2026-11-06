@@ -30,4 +30,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run dead-code
-      - run: npm test
+      - name: test (no oracle may skip in CI)
+        run: |
+          set -o pipefail
+          npm test -- --test-reporter=spec 2>&1 | tee /tmp/test.log
+          grep -q 'ℹ skipped 0' /tmp/test.log
